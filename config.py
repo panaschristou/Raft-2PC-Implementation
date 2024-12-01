@@ -4,6 +4,6 @@ NODES = {
     'account_b': {'ip': 'localhost', 'port': 5003}     # Node-3
 }
 
-# Transaction timeout settings
-PREPARE_TIMEOUT = 10.0
-COMMIT_TIMEOUT = 10.0
+# Timeout settings (in seconds)
+ELECTION_TIMEOUT = (1.0, 2.0)  # Adjusted for faster testing
+HEARTBEAT_INTERVAL = 0.5  # Interval for leader to send heartbeats
