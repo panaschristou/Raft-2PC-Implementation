@@ -51,30 +51,53 @@ class TwoPhaseCommitNode(Node):
             return self.handle_2pc_commit(data)
         return {'status': 'error', 'message': 'Unknown phase'}
 
-    # Overriding handle_client_connection to add 2PC-specific logic
     def handle_client_connection(self, client_socket: socket.socket):
         """
-        Extends the Node's client connection handler to include 2PC-specific RPC types.
+        Mananges incoming client connections and RPC requests. It takes a client socket as input.
+        Processes different types of RPCs and returns appropriate responses.
         """
         try:
-            data = client_socket.recv(4096).decode()
+            
+            data = client_socket.recv(4096).decode() # Receive and decode client request
             if data:
-                request = json.loads(data)
+                request = json.loads(data) # Parse JSON request
                 rpc_type = request['rpc_type']
                 response = {}
 
-                if rpc_type in ['2pc_prepare', '2pc_commit']:
-                    # Delegate to 2PC-specific handler
-                    response = self.handle_2pc_request(request['data'])
-                else:
-                    # Call the parent class's handler for other RPCs
-                    response = super().default_rpc_handler(request)
+                # Manange different RPC types with thread safety
+                with self.lock:
+                    if rpc_type == 'RequestVote':
+                        # Handle voting requests during leader election
+                        response = self.handle_request_vote(request['data'])
+                    elif rpc_type == 'AppendEntries':
+                        # Handle log replication and heartbeat messages
+                        response = self.handle_append_entries(request['data'])
+                    elif rpc_type == 'SubmitValue':
+                        # Handle client value submissions
+                        response = self.handle_client_submit(request['data'])
+                    elif rpc_type == 'TriggerLeaderChange':
+                        # Handle manual leader step-down requests
+                        response = self.trigger_leader_change()
+                    elif rpc_type == 'SimulateCrash':
+                        # Handle crash simulation requests
+                        response = self.simulate_crash()
+                    elif rpc_type == 'PrintLog':
+                        # Handle print log request
+                        response = self.print_node_log()
+                    elif rpc_type in ['2pc_prepare', '2pc_commit']:
+                        # Delegate to 2PC-specific handler
+                        response = self.handle_2pc_request(request['data'])    
+                    else:
+                        response = {'error': 'Unknown RPC type'}
 
+                # Send response back to client
                 client_socket.sendall(json.dumps(response).encode())
         except Exception as e:
             print(f"[{self.name}] Error handling client connection: {e}")
         finally:
-            client_socket.close()
+            client_socket.close()  # Ensure socket is closed even if an error occurs
+            
+            
 
 
 

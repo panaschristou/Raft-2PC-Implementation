@@ -1,7 +1,7 @@
 NODES = {
-    'coordinator': {'ip': 'localhost', 'port': 5001},  # Node-1
-    'account_a': {'ip': 'localhost', 'port': 5002},    # Node-2
-    'account_b': {'ip': 'localhost', 'port': 5003}     # Node-3
+    'node1': {'ip': 'localhost', 'port': 5001},  # Node-1
+    'node2': {'ip': 'localhost', 'port': 5002},    # Node-2
+    'node3': {'ip': 'localhost', 'port': 5003}     # Node-3
 }
 
 # Timeout settings (in seconds)
