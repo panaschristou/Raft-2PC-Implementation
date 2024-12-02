@@ -1,10 +1,19 @@
 from node_2pc import TwoPhaseCommitNode
 import sys
-from config import NODES
+from config import NODES, ACCOUNT_A_NODES, ACCOUNT_B_NODES
+
 class ParticipantNode(TwoPhaseCommitNode):
     def __init__(self, name):
-        # Initialize as a participant with its name
-        super().__init__(name, role="Participant")
+        # Determine cluster nodes
+        if name in ACCOUNT_A_NODES:
+            cluster_nodes = ACCOUNT_A_NODES
+        elif name in ACCOUNT_B_NODES:
+            cluster_nodes = ACCOUNT_B_NODES
+        else:
+            print("Invalid participant node name.")
+            sys.exit(1)
+        # Initialize as a participant with its name and cluster nodes
+        super().__init__(name, role="Participant", cluster_nodes=cluster_nodes)
         print(f"[{self.name}] Initialized as a participant node.")
 
     # Any additional participant-specific methods can be added here
@@ -22,7 +31,6 @@ if __name__ == '__main__':
     if len(sys.argv) != 2:
         print("Usage: python participant.py [node_name]")
         sys.exit(1)
-    # Validate node name from config file
     node_name = sys.argv[1]
     if node_name not in NODES:
         print(f"Invalid node name. Available nodes: {list(NODES.keys())}")

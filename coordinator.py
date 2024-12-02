@@ -8,19 +8,29 @@ class CoordinatorNode(TwoPhaseCommitNode):
         super().__init__(name, "Coordinator")
 
     def start_2pc(self, participants, transactions):
-        # Phase 1: Prepare
-        prepared = True
+    # Phase 1: Prepare
+        prepared_nodes = []
         for participant, delta in transactions.items():
             response = self.send_rpc(NODES[participant]['ip'], NODES[participant]['port'], '2pc_prepare', {'delta': delta})
-            if not response or response['status'] != 'prepared':
-                prepared = False
-                break
+            if response and response['status'] == 'prepared':
+                prepared_nodes.append(participant)
+            else:
+                # Abort if any participant cannot prepare
+                phase = 'abort'
+                for p in prepared_nodes:
+                    self.send_rpc(NODES[p]['ip'], NODES[p]['port'], f'2pc_{phase}', {'delta': transactions[p]})
+                return False  # Transaction aborted
 
-        # Phase 2: Commit/Abort
-        phase = 'commit' if prepared else 'abort'
+        # Phase 2: Commit
+        phase = 'commit'
         for participant, delta in transactions.items():
-            self.send_rpc(NODES[participant]['ip'], NODES[participant]['port'], f'2pc_{phase}', {'delta': delta})
-        return prepared
+            response = self.send_rpc(NODES[participant]['ip'], NODES[participant]['port'], f'2pc_{phase}', {'delta': delta})
+            if not response or response['status'] != 'committed':
+                # Handle failure during commit phase
+                print(f"Failed to commit on participant {participant}.")
+                return False  # Transaction aborted
+        return True  # Transaction committed
+
 
 if __name__ == '__main__':
     """

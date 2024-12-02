@@ -68,6 +68,15 @@ class Client2PC(BaseClient):
                 print(f"Account balance at {node_name}: {balance}")
             else:
                 print(f"Failed to fetch balance from {node_name}")
+    
+    def simulate_node_crash(self, node_name, crash_duration=20):
+        node_info = NODES[node_name]
+        response = self.send_rpc(node_info['ip'], node_info['port'], 'SimulateCrash', {'crash_duration': crash_duration})
+        if response and response.get('status') == 'Node crashed':
+            print(f"Node {node_name} has simulated a crash")
+        else:
+            print(f"Failed to crash node {node_name}")
+
 
 if __name__ == '__main__':
     client = Client2PC()

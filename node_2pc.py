@@ -3,8 +3,8 @@ import json
 from node import Node
 
 class TwoPhaseCommitNode(Node):
-    def __init__(self, name, role):
-        super().__init__(name)
+    def __init__(self, name, role, cluster_nodes=None):
+        super().__init__(name, cluster_nodes)
         self.role = role  # Coordinator or Participant
         self.account_balance = 0
         self.account_file = f"{self.name}_account.txt"
@@ -48,8 +48,17 @@ class TwoPhaseCommitNode(Node):
 
     def handle_2pc_commit(self, data):
         delta = data.get('delta', 0)
-        self.commit_transaction(delta)
-        return {'status': 'committed'}
+        # Use Raft consensus to commit the transaction
+        success = self.submit_value(delta)
+        if success:
+            # The transaction has been committed via Raft consensus
+            # Update the account balance
+            self.commit_transaction(delta)
+            return {'status': 'committed'}
+        else:
+            # Failed to achieve consensus; abort the transaction
+            return {'status': 'abort'}
+
 
     def handle_2pc_request(self, data):
         if data['phase'] == 'prepare':
