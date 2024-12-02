@@ -3,6 +3,7 @@ import json
 from node import Node
 from config import NODES
 import time
+from config import SimulationScenario
 class TwoPhaseCommitNode(Node):
     def __init__(self, name, role):
         super().__init__(name)
@@ -13,115 +14,123 @@ class TwoPhaseCommitNode(Node):
         self.timeout_duration = 1
         self.prepare_log = []
         self.commit_log = []
-        self.commit_log_file = f'{self.name}_commit_log.json'
-        self.prepare_log_file = f'{self.name}_prepare_log.json'
+        self.commit_log_file = f"{self.name}_commit_log.json"
+        self.prepare_log_file = f"{self.name}_prepare_log.json"
         self.account_file = f"{self.name}_account.txt"
+
         if role == "Participant":
             self.load_account_balance()
         self.load_prepare_log()
-        
+
+    # ------------------- Log Management -------------------
+
     def load_prepare_log(self):
-        try:
-            with open(self.prepare_log_file, 'r') as f:
-                self.prepare_log = json.load(f)
-                self.transaction_id = self.prepare_log[-1]['transaction_id'] + 1
-                if not isinstance(self.prepare_log, list):
-                    self.prepare_log = []
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.prepare_log = []
-            
+        """Loads the prepare log from file or initializes it."""
+        self.prepare_log = self._load_or_initialize_json(self.prepare_log_file, [])
+        if self.prepare_log:
+            self.transaction_id = self.prepare_log[-1]['transaction_id'] + 1
+
     def save_prepare_log(self):
-        try:
-            with open(self.prepare_log_file, 'r') as f:
-                logs = json.load(f)
-                if not isinstance(logs, list):
-                    logs = []
-        except (FileNotFoundError, json.JSONDecodeError):
-            logs = []
+        """Saves the latest prepare log entry."""
+        self._append_to_json_file(self.prepare_log_file, self.prepare_log[-1])
 
-        logs.append(self.prepare_log[-1])
-
-        with open(self.prepare_log_file, 'w') as f:
-            json.dump(logs, f)
-            
     def load_commit_log(self):
-        try:
-            with open(self.commit_log_file, 'r') as f:
-                self.commit_log = json.load(f)
-                if not isinstance(self.commit_log, list):
-                    self.commit_log = []
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.commit_log = []
-    
+        """Loads the commit log from file or initializes it."""
+        self.commit_log = self._load_or_initialize_json(self.commit_log_file, [])
+
     def save_commit_log(self):
+        """Saves the latest commit log entry."""
+        self._append_to_json_file(self.commit_log_file, self.commit_log[-1])
+
+    def _load_or_initialize_json(self, file_path, default):
+        """Loads JSON data or initializes it if the file is missing/corrupted."""
         try:
-            with open(self.commit_log_file, 'r') as f:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            print(f"{file_path} not found or corrupted. Initializing.")
+            with open(file_path, 'w') as f:
+                json.dump(default, f)
+            return default
+
+    def _append_to_json_file(self, file_path, data):
+        """Appends a single entry to a JSON file."""
+        try:
+            with open(file_path, 'r') as f:
                 logs = json.load(f)
                 if not isinstance(logs, list):
                     logs = []
         except (FileNotFoundError, json.JSONDecodeError):
             logs = []
 
-        logs.append(self.commit_log[-1])
+        logs.append(data)
+        with open(file_path, 'w') as f:
+            json.dump(logs, f, indent=4)
 
-        with open(self.commit_log_file, 'w') as f:
-            json.dump(logs, f)
+    # ------------------- Account Management -------------------
 
     def load_account_balance(self):
+        """Loads account balance or initializes it to 0 if the file is missing."""
         try:
             with open(self.account_file, 'r') as f:
                 self.account_balance = float(f.read().strip())
-        except FileNotFoundError:
-            with open(self.account_file, 'w') as f:
-                f.write("0")
+        except (FileNotFoundError, ValueError):
+            print(f"{self.account_file} not found or corrupted. Initializing to 0.")
             self.account_balance = 0
+            self.save_account_balance()
 
     def save_account_balance(self):
+        """Saves the current account balance."""
         with open(self.account_file, 'w') as f:
             f.write(str(self.account_balance))
-    
+
     def get_account_balance(self):
-        balance = self.account_balance
-        return{'node_name': self.name, 'balance': balance}
-    
+        """Returns the current account balance."""
+        return {'node_name': self.name, 'balance': self.account_balance}
+
     def set_account_balance(self, value):
+        """Sets the account balance and saves it."""
         self.account_balance = value
         self.save_account_balance()
         print(f"Account balance set to: {value}")
         return {'status': 'success'}
 
+    # ------------------- Transaction Management -------------------
+
     def prepare_transaction(self, delta):
+        """Checks if the transaction can be prepared (sufficient balance)."""
         if self.account_balance + delta < 0:
             print('Insufficient funds. Aborting transaction.')
             return False
         return True
-    
-    def check_transaction_status(self):
-        if self.role == 'Coordinator':
-            transaction_status = self.transaction_status
-        return {'transaction_status': transaction_status}
 
     def commit_transaction(self, delta):
+        """Commits the transaction by updating the account balance."""
         self.account_balance += delta
         self.save_account_balance()
-    
+
     def prepare_log_entry(self, data):
-        log_entry = {}
-        log_entry['transaction_id'] = self.transaction_id
-        log_entry['simulation_num'] = data['simulation_num']
-        log_entry['transactions'] = data['transactions']
+        """Creates a log entry for a transaction."""
+        log_entry = {
+            'transaction_id': self.transaction_id,
+            'simulation_num': data['simulation_num'],
+            'transactions': data['transactions']
+        }
         self.transaction_id += 1
         return log_entry
 
+    # ------------------- 2PC Handlers -------------------
+
     def handle_2pc_prepare(self, data):
+        """Handles the prepare phase of 2PC."""
         delta = data['transactions'][self.name]
         simulation_num = int(data.get('simulation_num', 0))
         print(f'simulation_num during prepare: {simulation_num}')
-        
-        if simulation_num == 1:
-            print('Simulation 1: Participant crashes before preparing transaction')
+
+        if simulation_num == SimulationScenario.CRASH_BEFORE_PREPARE.value:
+            print('Simulation 1: Participant crashes before preparing transaction.')
             return {'status': 'abort'}
-        
+
         if self.prepare_transaction(delta):
             log_entry = self.prepare_log_entry(data)
             self.prepare_log.append(log_entry)
@@ -129,28 +138,32 @@ class TwoPhaseCommitNode(Node):
         return {'status': 'abort'}
 
     def handle_2pc_commit(self, data):
-        delta = delta = data['transactions'][self.name]
+        """Handles the commit phase of 2PC."""
+        delta = data['transactions'][self.name]
         simulation_num = int(data.get('simulation_num', 0))
         print(f'simulation_num during commit: {simulation_num}')
-        
+
         log_entry = self.prepare_log_entry(data)
         self.commit_log.append(log_entry)
-            
-        if simulation_num == 2:
-            print('Simulation 2: Participant crashes before committing transaction')
+
+        if simulation_num == SimulationScenario.CRASH_BEFORE_COMMIT.value:
+            print('Simulation 2: Participant crashes before committing transaction.')
             return {'status': 'abort'}
-        
+
         self.commit_transaction(delta)
         return {'status': 'committed'}
 
     def handle_2pc_log_prepare(self, data):
+        """Handles logging the prepare phase."""
         self.save_prepare_log()
         return {'status': 'logged_prepare'}
-    
+
     def handle_2pc_log_commit(self, data):
+        """Handles logging the commit phase."""
         self.save_commit_log()
         return {'status': 'logged_commit'}
     
+    # ------------------- 2PC Request -------------------
 
     def handle_2pc_request(self, data):
         if self.role != 'Coordinator':
@@ -238,11 +251,11 @@ class TwoPhaseCommitNode(Node):
         print("Prepare phase successfully logged for all participants.")
 
         # Simulation-specific handling
-        if int(data['simulation_num']) in [3, 4]:
+        if int(data['simulation_num']) in [SimulationScenario.COORDINATOR_CRASH_BEFORE_COMMIT.value, SimulationScenario.COORDINATOR_DIFFERENT_PREPARE_COMMIT_LOG.value]:
             print("Simulated crash scenario. Aborting transaction and informing client.")
             return {'status': 'aborted'}
 
-        if int(data['simulation_num']) == 5:
+        if int(data['simulation_num']) == SimulationScenario.COORDINATOR_RECOVERS_AFTER_PREPARE.value:
             print("Coordinator recovers and sends commit requests.")
 
         # Phase 3: Commit
@@ -319,7 +332,7 @@ class TwoPhaseCommitNode(Node):
         print("Transaction committed successfully.")
         return {'status': 'committed'}
 
-
+    # ------------------- Connection Handler -------------------
 
     def handle_client_connection(self, client_socket: socket.socket):
         """
@@ -383,6 +396,7 @@ class TwoPhaseCommitNode(Node):
 
                 # Send response back to client
                 client_socket.sendall(json.dumps(response).encode())
+                
         except Exception as e:
             print(f"[{self.name}] Error handling client connection: {e}")
         finally:
