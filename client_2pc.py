@@ -15,6 +15,15 @@ class Client2PC(BaseClient):
         and values are the transaction deltas for their accounts.
         Example: {"node2": -100, "node3": 100}
         """
+        
+        # SPLIT THE TRANSACTION INTO TWO PHASES
+        # CREATE AND CALL A FUNCTION TO DO THE PREPARE. IF IT RETURNS TRUE, THEN CALL THE COMMIT
+        # THIS SHOULD ALLOW US TO CHECK THE STATUS OF THE TRANSACTION
+        # IF THE PREPARE RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
+        # IF THE COMMIT RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
+        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION IN BETWEEN THE PREPARATION AND COMMIT
+        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION AFTER THE COMMIT
+        
         coordinator = 'node1'  # Assuming node1 is the coordinator
         coordinator_info = NODES[coordinator]
 
@@ -37,7 +46,7 @@ class Client2PC(BaseClient):
         coordinator_info = NODES[coordinator]
 
         print("Checking transaction status...")
-        response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], 'transaction_status', {})
+        response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], 'CheckTransactionStatus', {})
         if response:
             print(f"Transaction Status: {response.get('status', 'Unknown')}")
         else:
@@ -52,8 +61,9 @@ class Client2PC(BaseClient):
             if node_name == 'node1':  # Skip the coordinator
                 continue
             node_info = NODES[node_name]
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'get_balance', {})
+            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
             if response:
+                # WE ARE RECEIVING A NUMBER AS THE BALANCE SO CHANGE
                 balance = response.get('balance', 'Unknown')
                 print(f"Account balance at {node_name}: {balance}")
             else:
@@ -103,7 +113,7 @@ if __name__ == '__main__':
         except json.JSONDecodeError:
             print("Invalid transaction format. Use JSON format.")
             sys.exit(1)
-    elif command == 'check_status':
+    elif command == 'check_transcation_status':
         client.check_transaction_status()
     elif command == 'get_balances':
         client.get_account_balances()

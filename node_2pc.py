@@ -23,11 +23,18 @@ class TwoPhaseCommitNode(Node):
     def save_account_balance(self):
         with open(self.account_file, 'w') as f:
             f.write(str(self.account_balance))
+    
+    def get_account_balance(self):
+        return self.account_balance
 
     def prepare_transaction(self, delta):
         if self.account_balance + delta < 0:
             return False
         return True
+    
+    def check_transaction_status(self):
+        # JUST SOMETHING TO HAVE IT DEFINED
+        return {'status': 'committed' if self.account_balance >= 0 else 'aborted'}
 
     def commit_transaction(self, delta):
         self.account_balance += delta
@@ -87,6 +94,13 @@ class TwoPhaseCommitNode(Node):
                     elif rpc_type in ['2pc_prepare', '2pc_commit']:
                         # Delegate to 2PC-specific handler
                         response = self.handle_2pc_request(request['data'])    
+                    elif rpc_type == 'GetBalance':
+                        # Handle client balance requests
+                        # MAYBE THIS IS NOT CORRECT
+                        response = self.get_account_balance()
+                    elif rpc_type == 'CheckTransactionStatus':
+                        # Handle transaction status check requests
+                        response = self.check_transaction_status()
                     else:
                         response = {'error': 'Unknown RPC type'}
 
