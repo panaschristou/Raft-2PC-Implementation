@@ -10,6 +10,8 @@ class TwoPhaseCommitNode(Node):
         self.transaction_id = 0
         self.transaction_status = None
         self.prepare_log = []
+        self.commit_log = []
+        self.commit_log_file = f'{self.name}_commit_log.json'
         self.prepare_log_file = f'{self.name}_prepare_log.json'
         self.account_file = f"{self.name}_account.txt"
         if role == "Participant":
@@ -20,7 +22,7 @@ class TwoPhaseCommitNode(Node):
         try:
             with open(self.prepare_log_file, 'r') as f:
                 self.prepare_log = json.load(f)
-                self.transactio_id = self.prepare_log[-1]['transaction_id'] + 1
+                self.transaction_id = self.prepare_log[-1]['transaction_id'] + 1
                 if not isinstance(self.prepare_log, list):
                     self.prepare_log = []
         except (FileNotFoundError, json.JSONDecodeError):
@@ -38,6 +40,29 @@ class TwoPhaseCommitNode(Node):
         logs.append(self.prepare_log[-1])
 
         with open(self.prepare_log_file, 'w') as f:
+            json.dump(logs, f)
+            
+    def load_commit_log(self):
+        try:
+            with open(self.commit_log_file, 'r') as f:
+                self.commit_log = json.load(f)
+                if not isinstance(self.commit_log, list):
+                    self.commit_log = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.commit_log = []
+    
+    def save_commit_log(self):
+        try:
+            with open(self.commit_log_file, 'r') as f:
+                logs = json.load(f)
+                if not isinstance(logs, list):
+                    logs = []
+        except (FileNotFoundError, json.JSONDecodeError):
+            logs = []
+
+        logs.append(self.commit_log[-1])
+
+        with open(self.commit_log_file, 'w') as f:
             json.dump(logs, f)
 
     def load_account_balance(self):
@@ -117,6 +142,10 @@ class TwoPhaseCommitNode(Node):
         self.save_prepare_log()
         return {'status': 'logged_prepare'}
     
+    def handle_2pc_log_commit(self, data):
+        self.save_commit_log()
+        return {'status': 'logged_commit'}
+    
     def handle_2pc_request(self, data):
         if self.role == 'Coordinator':
             num_participants = len(data)
@@ -168,8 +197,7 @@ class TwoPhaseCommitNode(Node):
             
             if int(data['simulation_num']) == 4:
                 print('Simulation 4: Coordinator crashes but can recover because he logged the transaction status and can continue after the preparation phase.')
-            
-                
+               
                     
             if num_prepared == num_participants:
                 self.transaction_status = 'prepared'
@@ -184,6 +212,23 @@ class TwoPhaseCommitNode(Node):
                         if response and response.get('status') == 'committed':
                             print(f"Participant {node_name} has committed.")
                             num_committed += 1
+                            if num_committed == num_participants:
+                                for node_name in NODES:
+                                    if node_name != coordinator_node_name:
+                                        node_info = NODES[node_name]
+                                        print(f"Sending log commit consencus to  participant: {node_name}")
+
+                                        response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_log_commit', data)
+                                        if response and response.get('status') == 'logged_commit':
+                                            print(f"Participant {node_name} logged the commit request.")
+                                            num_logged_commit += 1
+                                            if num_logged_commit == num_participants:
+                                                log_entry = self.prepare_log_entry(data)
+                                                self.commit_log.append(log_entry)
+                                                self.save_commit_log()
+                                        else:
+                                            print(f"Participant {node_name} did not log commit request.")
+                                            return {'status': 'logging commit aborted'}
                         else:
                             self.transaction_status = 'commit aborted'
                             print(f"Participant {node_name} has not committed.")
@@ -241,9 +286,11 @@ class TwoPhaseCommitNode(Node):
                     elif rpc_type == '2pc_log_prepare':
                         # Delegate to 2PC-specific handler
                         response = self.handle_2pc_log_prepare(request['data'])
+                    elif rpc_type == '2pc_log_commit':
+                        # Delegate to 2PC-specific handler
+                        response = self.handle_2pc_log_commit(request['data'])
                     elif rpc_type == 'GetBalance':
                         # Handle client balance requests
-                        # MAYBE THIS IS NOT CORRECT
                         response = self.get_account_balance()
                     elif rpc_type == 'CheckTransactionStatus':
                         # Handle transaction status check requests
