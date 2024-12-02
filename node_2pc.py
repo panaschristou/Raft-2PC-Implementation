@@ -2,6 +2,7 @@ import socket
 import json
 from node import Node
 from config import NODES
+import time
 class TwoPhaseCommitNode(Node):
     def __init__(self, name, role):
         super().__init__(name)
@@ -9,6 +10,7 @@ class TwoPhaseCommitNode(Node):
         self.account_balance = 0
         self.transaction_id = 0
         self.transaction_status = None
+        self.timeout_duration = 1
         self.prepare_log = []
         self.commit_log = []
         self.commit_log_file = f'{self.name}_commit_log.json'
@@ -149,104 +151,175 @@ class TwoPhaseCommitNode(Node):
         self.save_commit_log()
         return {'status': 'logged_commit'}
     
+
     def handle_2pc_request(self, data):
-        if self.role == 'Coordinator':
-            num_participants = len(data)
-            num_prepared = 0
-            num_logged_prepare = 0
-            num_committed = 0
-            num_logged_commit = 0
-            coordinator_node_name = 'node1'
-            self.transaction_status = 'started'
-            print(f"Starting 2PC transaction with {num_participants} participants.")
-            print(f'Simulation number: {data["simulation_num"]}')
-            
-            for node_name in NODES:
-                if node_name != coordinator_node_name:
-                    node_info = NODES[node_name]
-                    print(f"Sending prepare request to  participant: {node_name}")
+        if self.role != 'Coordinator':
+            return {'status': 'error', 'message': 'Only the coordinator can handle 2PC requests.'}
 
+        num_participants = len(NODES) - 1  # Exclude the coordinator
+        num_prepared = 0
+        num_logged_prepare = 0
+        num_committed = 0
+        num_logged_commit = 0
+        coordinator_node_name = 'node1'
+        self.transaction_status = 'started'
+
+        print(f"Starting 2PC transaction with {num_participants} participants.")
+        print(f"Simulation number: {data.get('simulation_num')}")
+
+        # Phase 1: Prepare
+        for node_name in NODES:
+            if node_name != coordinator_node_name:
+                node_info = NODES[node_name]
+                print(f"Sending prepare request to participant: {node_name}")
+
+                start_time = time.time()
+                response = None
+                while time.time() - start_time < self.timeout_duration:
                     response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_prepare', data)
-                    if response and response.get('status') == 'prepared':
-                        print(f"Participant {node_name} is prepared.")
-                        num_prepared += 1
-                        if num_prepared == num_participants:
-                            for node_name in NODES:
-                                if node_name != coordinator_node_name:
-                                    node_info = NODES[node_name]
-                                    print(f"Sending log prepare consencus to  participant: {node_name}")
+                    if response:
+                        break
+                    time.sleep(0.1)  # Avoid busy-waiting
 
-                                    response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_log_prepare', data)
-                                    if response and response.get('status') == 'logged_prepare':
-                                        print(f"Participant {node_name} logged the prepare request.")
-                                        num_logged_prepare += 1
-                                        if num_logged_prepare == num_participants:
-                                            log_entry = self.prepare_log_entry(data)
-                                            self.prepare_log.append(log_entry)
-                                            self.save_prepare_log()
-                                    else:
-                                        print(f"Participant {node_name} did not log prepare request.")
-                                        return {'status': 'logging prepare aborted'}
-                    else:
-                        self.transaction_status = 'aborted'
-                        print(f"Participant {node_name} is not prepared.")
-                        return {'status': 'prepare aborted'}
-            
+                if not response:
+                    print(f"Participant {node_name} did not respond to prepare request in time. Aborting transaction.")
+                    self.transaction_status = 'aborted'
+                    return {'status': 'prepare aborted'}
 
-            
-            if int(data['simulation_num']) == 3:
-                print('Last entry of prepare log is the same as last entry of commit log. Coordinator crashes before sending commit requests and did not log the transaction. Client is informed to start a new transaction.')
-                return {'status': 'aborted'}
-            
-            if int(data['simulation_num']) == 4:
-                print('Last entry of prepare log is different from last entry of commit log. Coordinator crashes before sending commit requests and did not log the transaction. Client is informed to start a new transaction.')
-                return {'status': 'aborted'}
-            
-            if int(data['simulation_num']) == 5:
-                print('Last entry of prepare log is different from last entry of commit log but the same as the last entry of prepare log of the participants. The coordinator proceeds to send commit messages to the participants.')
-               
-                    
-            if num_prepared == num_participants:
-                self.transaction_status = 'prepared'
-                print("All participants are prepared. Sending commit requests.")
-                
-                for node_name in NODES:
-                    if node_name != coordinator_node_name:
-                        node_info = NODES[node_name]
-                        print(f"Sending commit request to participant: {node_name}")
-                        
-                        response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_commit', data)
-                        if response and response.get('status') == 'committed':
-                            print(f"Participant {node_name} has committed.")
-                            num_committed += 1
-                            if num_committed == num_participants:
-                                for node_name in NODES:
-                                    if node_name != coordinator_node_name:
-                                        node_info = NODES[node_name]
-                                        print(f"Sending log commit consencus to  participant: {node_name}")
+                if response.get('status') == 'prepared':
+                    print(f"Participant {node_name} is prepared.")
+                    num_prepared += 1
+                else:
+                    print(f"Participant {node_name} is not prepared. Aborting transaction.")
+                    self.transaction_status = 'aborted'
+                    return {'status': 'prepare aborted'}
 
-                                        response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_log_commit', data)
-                                        if response and response.get('status') == 'logged_commit':
-                                            print(f"Participant {node_name} logged the commit request.")
-                                            num_logged_commit += 1
-                                            if num_logged_commit == num_participants:
-                                                log_entry = self.prepare_log_entry(data)
-                                                self.commit_log.append(log_entry)
-                                                self.save_commit_log()
-                                        else:
-                                            print(f"Participant {node_name} did not log commit request.")
-                                            return {'status': 'logging commit aborted'}
-                        else:
-                            self.transaction_status = 'commit aborted'
-                            print(f"Participant {node_name} has not committed.")
-                            return {'status': 'aborted'}
-            
-            if num_committed == num_participants:
-                self.transaction_status = 'committed'
-                print("All participants have committed.")
-                return {'status': 'committed'}
-            
-        return {'status': 'error', 'message': 'Transaction not committed'}
+        if num_prepared < num_participants:
+            print("Not all participants are prepared. Aborting transaction.")
+            self.transaction_status = 'aborted'
+            return {'status': 'prepare aborted'}
+
+        # Phase 2: Log Prepare
+        for node_name in NODES:
+            if node_name != coordinator_node_name:
+                node_info = NODES[node_name]
+                print(f"Sending log prepare consensus to participant: {node_name}")
+
+                start_time = time.time()
+                response = None
+                while time.time() - start_time < self.timeout_duration:
+                    response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_log_prepare', data)
+                    if response:
+                        break
+                    time.sleep(0.1)  # Avoid busy-waiting
+
+                if not response:
+                    print(f"Participant {node_name} did not respond to log prepare request in time. Aborting transaction.")
+                    self.transaction_status = 'aborted'
+                    return {'status': 'logging prepare aborted'}
+
+                if response.get('status') == 'logged_prepare':
+                    print(f"Participant {node_name} logged the prepare request.")
+                    num_logged_prepare += 1
+                else:
+                    print(f"Participant {node_name} did not log the prepare request. Aborting transaction.")
+                    self.transaction_status = 'aborted'
+                    return {'status': 'logging prepare aborted'}
+
+        if num_logged_prepare < num_participants:
+            print("Not all participants logged the prepare request. Aborting transaction.")
+            self.transaction_status = 'aborted'
+            return {'status': 'logging prepare aborted'}
+
+        # Log the prepare consensus
+        log_entry = self.prepare_log_entry(data)
+        self.prepare_log.append(log_entry)
+        self.save_prepare_log()
+        print("Prepare phase successfully logged for all participants.")
+
+        # Simulation-specific handling
+        if int(data['simulation_num']) in [3, 4]:
+            print("Simulated crash scenario. Aborting transaction and informing client.")
+            return {'status': 'aborted'}
+
+        if int(data['simulation_num']) == 5:
+            print("Coordinator recovers and sends commit requests.")
+
+        # Phase 3: Commit
+        for node_name in NODES:
+            if node_name != coordinator_node_name:
+                node_info = NODES[node_name]
+                print(f"Sending commit request to participant: {node_name}")
+
+                start_time = time.time()
+                response = None
+                while time.time() - start_time < self.timeout_duration:
+                    response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_commit', data)
+                    if response:
+                        break
+                    time.sleep(0.1)  # Avoid busy-waiting
+
+                if not response:
+                    print(f"Participant {node_name} did not respond to commit request in time. Aborting transaction.")
+                    self.transaction_status = 'commit aborted'
+                    return {'status': 'aborted'}
+
+                if response.get('status') == 'committed':
+                    print(f"Participant {node_name} has committed.")
+                    num_committed += 1
+                else:
+                    print(f"Participant {node_name} has not committed. Aborting transaction.")
+                    self.transaction_status = 'commit aborted'
+                    return {'status': 'aborted'}
+
+        if num_committed < num_participants:
+            print("Not all participants have committed. Aborting transaction.")
+            self.transaction_status = 'commit aborted'
+            return {'status': 'aborted'}
+
+        # Phase 4: Log Commit
+        for node_name in NODES:
+            if node_name != coordinator_node_name:
+                node_info = NODES[node_name]
+                print(f"Sending log commit consensus to participant: {node_name}")
+
+                start_time = time.time()
+                response = None
+                while time.time() - start_time < self.timeout_duration:
+                    response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_log_commit', data)
+                    if response:
+                        break
+                    time.sleep(0.1)  # Avoid busy-waiting
+
+                if not response:
+                    print(f"Participant {node_name} did not respond to log commit request in time. Aborting transaction.")
+                    self.transaction_status = 'logging commit aborted'
+                    return {'status': 'logging commit aborted'}
+
+                if response.get('status') == 'logged_commit':
+                    print(f"Participant {node_name} logged the commit request.")
+                    num_logged_commit += 1
+                else:
+                    print(f"Participant {node_name} did not log the commit request. Aborting transaction.")
+                    self.transaction_status = 'logging commit aborted'
+                    return {'status': 'logging commit aborted'}
+
+        if num_logged_commit < num_participants:
+            print("Not all participants logged the commit request. Aborting transaction.")
+            self.transaction_status = 'logging commit aborted'
+            return {'status': 'logging commit aborted'}
+
+        # Log the commit consensus
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+        self.save_commit_log()
+        print("Commit phase successfully logged for all participants.")
+
+        self.transaction_status = 'committed'
+        print("Transaction committed successfully.")
+        return {'status': 'committed'}
+
+
 
     def handle_client_connection(self, client_socket: socket.socket):
         """
@@ -315,7 +388,6 @@ class TwoPhaseCommitNode(Node):
         finally:
             client_socket.close()  # Ensure socket is closed even if an error occurs
             
-            
-
+                    
 
 
