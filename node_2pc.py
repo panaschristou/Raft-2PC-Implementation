@@ -192,11 +192,15 @@ class TwoPhaseCommitNode(Node):
 
             
             if int(data['simulation_num']) == 3:
-                print('Simulation 3: Coordinator crashes before sending commit requests and did not log the transaction. Client is informed to start a new transaction.')
+                print('Last entry of prepare log is the same as last entry of commit log. Coordinator crashes before sending commit requests and did not log the transaction. Client is informed to start a new transaction.')
                 return {'status': 'aborted'}
             
             if int(data['simulation_num']) == 4:
-                print('Simulation 4: Coordinator crashes but can recover because he logged the transaction status and can continue after the preparation phase.')
+                print('Last entry of prepare log is different from last entry of commit log. Coordinator crashes before sending commit requests and did not log the transaction. Client is informed to start a new transaction.')
+                return {'status': 'aborted'}
+            
+            if int(data['simulation_num']) == 5:
+                print('Last entry of prepare log is different from last entry of commit log but the same as the last entry of prepare log of the participants. The coordinator proceeds to send commit messages to the participants.')
                
                     
             if num_prepared == num_participants:
