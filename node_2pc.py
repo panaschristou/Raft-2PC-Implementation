@@ -131,6 +131,9 @@ class TwoPhaseCommitNode(Node):
         simulation_num = int(data.get('simulation_num', 0))
         print(f'simulation_num during commit: {simulation_num}')
         
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+            
         if simulation_num == 2:
             print('Simulation 2: Participant crashes before committing transaction')
             return {'status': 'abort'}
