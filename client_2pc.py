@@ -1,34 +1,31 @@
 from client import BaseClient
-from config import NODES
+from config import COORDINATOR_NODE, CLUSTER_A_NODES, CLUSTER_B_NODES
 import json
 import sys
 
 class Client2PC(BaseClient):
-    """
-    Extended client class for Two-Phase Commit (2PC) functionality.
-    """
-
-    def perform_transaction(self, transactions):
+    def perform_transaction(self, transactions, bonus=False, simulation_num=0):
         """
         Send a transaction request to the coordinator.
-        The transaction format is a dictionary where keys are node names
-        and values are the transaction deltas for their accounts.
-        Example: {"node2": -100, "node3": 100}
+        Now uses account-level transactions instead of node-specific ones.
+        Example: {"AccountA": -100, "AccountB": 100}
         """
-        
-        # SPLIT THE TRANSACTION INTO TWO PHASES
-        # CREATE AND CALL A FUNCTION TO DO THE PREPARE. IF IT RETURNS TRUE, THEN CALL THE COMMIT
-        # THIS SHOULD ALLOW US TO CHECK THE STATUS OF THE TRANSACTION
-        # IF THE PREPARE RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
-        # IF THE COMMIT RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
-        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION IN BETWEEN THE PREPARATION AND COMMIT
-        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION AFTER THE COMMIT
-        
-        coordinator = 'node1'  # Assuming node1 is the coordinator
-        coordinator_info = NODES[coordinator]
+        if bonus:
+            print("Performing transaction with bonus...")
+            balance_a, balance_b, bonus_value = self.calculate_bonus()
+            print(f"Balance A: {balance_a}, Balance B: {balance_b}, Bonus Value: {bonus_value}")
+            
+            if bonus_value is not None:
+                transactions = {'AccountA': bonus_value, 'AccountB': bonus_value}
 
+        coordinator_info = COORDINATOR_NODE['node1']
         print(f"Sending transaction to coordinator: {transactions}")
-        response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], '2pc_request', transactions)
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            '2pc_request',
+            {'transactions': transactions, 'simulation_num': simulation_num}
+        )
 
         if response and response.get('status') == 'committed':
             print("Transaction successfully committed.")
@@ -37,46 +34,45 @@ class Client2PC(BaseClient):
         else:
             print("Failed to process the transaction.")
 
-    def check_transaction_status(self):
-        """
-        Request the transaction status from the coordinator.
-        Useful for debugging or ensuring that the transaction was successful.
-        """
-        coordinator = 'node1'  # Assuming node1 is the coordinator
-        coordinator_info = NODES[coordinator]
-
-        print("Checking transaction status...")
-        response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], 'CheckTransactionStatus', {})
-        if response:
-            print(f"Transaction Status: {response.get('status', 'Unknown')}")
-        else:
-            print("Failed to retrieve transaction status from the coordinator.")
-
     def get_account_balances(self):
-        """
-        Retrieve the current account balances from all participant nodes.
-        """
-        print("Fetching account balances from all participants...")
-        for node_name in NODES:
-            if node_name == 'node1':  # Skip the coordinator
-                continue
-            node_info = NODES[node_name]
+        """Retrieve current account balances from RAFT cluster leaders."""
+        print("Fetching account balances...")
+        
+        # Try each node in Cluster A until we find the leader
+        for node_name, node_info in CLUSTER_A_NODES.items():
             response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
-            if response:
-                # WE ARE RECEIVING A NUMBER AS THE BALANCE SO CHANGE
-                balance = response.get('balance', 'Unknown')
-                print(f"Account balance at {node_name}: {balance}")
-            else:
-                print(f"Failed to fetch balance from {node_name}")
-    
-    def simulate_node_crash(self, node_name, crash_duration=20):
-        node_info = NODES[node_name]
-        response = self.send_rpc(node_info['ip'], node_info['port'], 'SimulateCrash', {'crash_duration': crash_duration})
-        if response and response.get('status') == 'Node crashed':
-            print(f"Node {node_name} has simulated a crash")
-        else:
-            print(f"Failed to crash node {node_name}")
+            if response and response.get('status') == 'success':
+                print(f"Account A balance: {response.get('balance')}")
+                break
+                
+        # Try each node in Cluster B until we find the leader
+        for node_name, node_info in CLUSTER_B_NODES.items():
+            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
+            if response and response.get('status') == 'success':
+                print(f"Account B balance: {response.get('balance')}")
+                break
 
+    def set_account_balance(self, account, balance):
+        """Set account balance by finding and updating the RAFT leader."""
+        # Extract cluster letter (A or B) from AccountA/AccountB format
+        cluster_letter = account[-1] if account.startswith('Account') else account
+        
+        # Create transaction for coordinator with proper account format
+        transactions = {f'Account{cluster_letter}': balance}
+        
+        # Send to coordinator as a transaction
+        coordinator_info = COORDINATOR_NODE['node1']
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            '2pc_request',
+            {'transactions': transactions}
+        )
+        
+        if response and response.get('status') == 'committed':
+            print(f"Successfully set balance for Account {cluster_letter} to {balance}")
+        else:
+            print(f"Failed to set balance for Account {cluster_letter}")
 
 if __name__ == '__main__':
     client = Client2PC()
@@ -86,9 +82,10 @@ if __name__ == '__main__':
         print("  python client_2pc.py leader_change")
         print("  python client_2pc.py simulate_crash [node_name]")
         print("  python client_2pc.py print_logs")
-        print("  python client_2pc.py transaction '{\"node2\": -100, \"node3\": 100}'")
+        print("  python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (optional)] [node crash simulation # (Default = 0)]")
         print("  python client_2pc.py check_status")
         print("  python client_2pc.py get_balances")
+        print("  python client_2pc.py set_balance [node_name] [balance]")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -113,12 +110,16 @@ if __name__ == '__main__':
 
     # New commands for 2PC functionality
     elif command == 'transaction':
-        if len(sys.argv) != 3:
-            print("Usage: python client_2pc.py transaction '{\"node2\": -100, \"node3\": 100}'")
+        if len(sys.argv) < 4 or len(sys.argv) > 6:
+            print("Usage: python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (optional)]")
             sys.exit(1)
         try:
-            transactions = json.loads(sys.argv[2])
-            client.perform_transaction(transactions)
+            node2_val = int(sys.argv[2])
+            node3_val = int(sys.argv[3])
+            transactions = {'AccountA': node2_val, 'AccountB': node3_val}
+            bonus_flag = True if len(sys.argv) > 4 and sys.argv[4] == 'bonus' else False
+            crash_simulation_num = sys.argv[5] if len(sys.argv) == 6 else 0
+            client.perform_transaction(transactions, bonus_flag, simulation_num=crash_simulation_num)
         except json.JSONDecodeError:
             print("Invalid transaction format. Use JSON format.")
             sys.exit(1)
@@ -126,5 +127,12 @@ if __name__ == '__main__':
         client.check_transaction_status()
     elif command == 'get_balances':
         client.get_account_balances()
+    elif command == 'set_balance':
+        if len(sys.argv) != 4:
+            print("Usage: python client_2pc.py set_balance [node_name] [balance]")
+            sys.exit(1)
+        node_name = sys.argv[2]
+        balance = int(sys.argv[3])
+        client.set_account_balance(node_name, balance)
     else:
         print("Unknown command.")
