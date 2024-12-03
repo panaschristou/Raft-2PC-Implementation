@@ -86,7 +86,7 @@ class TwoPhaseCommitNode(Node):
 
     def get_account_balance(self):
         """Returns the current account balance."""
-        return {'node_name': self.name, 'balance': self.account_balance}
+        return {'status': 'success', 'node_name': self.name, 'balance': self.account_balance}
 
     def set_account_balance(self, value):
         """Sets the account balance and saves it."""
