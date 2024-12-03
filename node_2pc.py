@@ -15,9 +15,9 @@ class TwoPhaseCommitNode(Node):
         self.timeout_duration = 1
         self.prepare_log = []
         self.commit_log = []
-        self.commit_log_file = f"{self.name}_commit_log.json"
-        self.prepare_log_file = f"{self.name}_prepare_log.json"
         self.account_file = f"{self.name}_account.txt"
+        self.prepare_log_file = f"{self.name}_prepare_log.json"
+        self.commit_log_file = f"{self.name}_commit_log.json"
         self.cluster_name = self._determine_cluster()
         self.cluster_nodes = self._get_cluster_nodes()
 
@@ -108,10 +108,17 @@ class TwoPhaseCommitNode(Node):
         return {'status': 'success', 'node_name': self.name, 'balance': self.account_balance}
 
     def set_account_balance(self, value):
-        """Sets the account balance and saves it."""
+        """Sets the account balance and replicates to followers."""
+        if self.state != 'Leader':
+            return {'status': 'error', 'message': 'Not the leader'}
+            
         self.account_balance = value
         self.save_account_balance()
-        print(f"Account balance set to: {value}")
+        
+        # Replicate to followers
+        self.replicate_to_cluster('account_balance', self.account_balance)
+        
+        print(f"[{self.name}] Account balance set to: {value}")
         return {'status': 'success'}
 
     # ------------------- Transaction Management -------------------
@@ -129,14 +136,13 @@ class TwoPhaseCommitNode(Node):
         self.save_account_balance()
 
     def prepare_log_entry(self, data):
-        """Creates a log entry for a transaction."""
-        log_entry = {
+        entry = {
             'transaction_id': self.transaction_id,
-            'simulation_num': data['simulation_num'],
+            'simulation_num': data.get('simulation_num', 0),  # Use 'get' to prevent KeyError
             'transactions': data['transactions']
         }
         self.transaction_id += 1
-        return log_entry
+        return entry
 
     # ------------------- 2PC Handlers -------------------
 
@@ -161,22 +167,29 @@ class TwoPhaseCommitNode(Node):
         return {'status': 'abort'}
 
     def handle_2pc_commit(self, data):
-        """Handles the commit phase of 2PC."""
         if self.state != 'Leader':
             return {'status': 'error', 'message': 'Not the cluster leader'}
-
-        cluster_delta = data['transactions'].get(f'Account{self.cluster_name}', 0)
-        print(f'[{self.name}] Processing commit for cluster {self.cluster_name} with delta: {cluster_delta}')
-
-        log_entry = self.prepare_log_entry(data)
-        self.commit_log.append(log_entry)
-        self.commit_transaction(cluster_delta)
         
-        # Replicate to RAFT followers
-        self.replicate_to_cluster('commit_log', log_entry)
-        self.replicate_to_cluster('account_balance', self.account_balance)
-        
-        return {'status': 'committed'}
+        try:
+            # Get transaction for this cluster
+            account_key = f'Account{self.cluster_name}'
+            cluster_delta = data['transactions'].get(account_key, 0)
+            
+            print(f'[{self.name}] Processing commit for cluster {self.cluster_name}')
+            print(f'[{self.name}] Transaction delta: {cluster_delta}')
+            print(f'[{self.name}] Current balance: {self.account_balance}')
+            
+            # Update balance
+            self.commit_transaction(cluster_delta)
+            print(f'[{self.name}] New balance: {self.account_balance}')
+            
+            # Replicate to followers
+            self.replicate_to_cluster('account_balance', self.account_balance)
+            
+            return {'status': 'committed'}
+        except Exception as e:
+            print(f"[{self.name}] Error in commit handling: {e}")
+            return {'status': 'error', 'message': str(e)}
     
     # ------------------- 2PC Request -------------------
 
@@ -432,38 +445,46 @@ class TwoPhaseCommitNode(Node):
             client_socket.close()  # Ensure socket is closed even if an error occurs
 
     def handle_raft_replication(self, data):
-            """Handles replication requests from RAFT leader."""
+        """Handles replication requests from RAFT leader."""
+        try:
             data_type = data['type']
-            if data_type == 'prepare_log':
+            if data_type == 'account_balance':
+                self.account_balance = data['data']
+                self.save_account_balance()
+                print(f"[{self.name}] Updated balance to {self.account_balance}")
+            elif data_type == 'prepare_log':
                 self.prepare_log.append(data['data'])
                 self._append_to_json_file(self.prepare_log_file, data['data'])
             elif data_type == 'commit_log':
                 self.commit_log.append(data['data'])
                 self._append_to_json_file(self.commit_log_file, data['data'])
-            elif data_type == 'account_balance':
-                self.account_balance = data['data']
-                self.save_account_balance()
             return {'status': 'success'}
+        except Exception as e:
+            print(f"[{self.name}] Error in replication: {e}")
+            return {'status': 'error', 'message': str(e)}
     
     def replicate_to_cluster(self, data_type, data):
-        """Replicates data to RAFT cluster members."""
         if not self.cluster_nodes or self.state != 'Leader':
+            print(f"[{self.name}] Not replicating: not leader or no cluster nodes")
             return
-            
+        
         print(f"[{self.name}] Replicating {data_type} to cluster members")
+        
         for node_name, node_info in self.cluster_nodes.items():
             if node_name != self.name:
-                response = self.send_rpc(
-                    node_info['ip'],
-                    node_info['port'],
-                    'RaftReplicate',
-                    {'type': data_type, 'data': data}
-                )
-                if response and response.get('status') == 'success':
-                    print(f"[{self.name}] Successfully replicated to {node_name}")
+                try:
+                    response = self.send_rpc(
+                        node_info['ip'],
+                        node_info['port'],
+                        'RaftReplicate',
+                        {'type': data_type, 'data': data}
+                    )
+                    if response and response.get('status') == 'success':
+                        print(f"[{self.name}] Successfully replicated to {node_name}")
+                except Exception as e:
+                    print(f"[{self.name}] Error replicating to {node_name}: {e}")
 
     def apply_entry_to_state_machine(self, entry):
-        """Override Node's apply_entry_to_state_machine to handle account operations."""
         super().apply_entry_to_state_machine(entry)
         if self.role == 'Participant':
             self.commit_transaction(entry.get('delta', 0))
