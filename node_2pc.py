@@ -151,6 +151,31 @@ class TwoPhaseCommitNode(Node):
         if self.transaction_status:
             return {'status': self.transaction_status}
         return {'status': 'No transaction has been executed yet.'}
+    
+    # ------------------- 2PC Utilities -------------------
+    def simulate_crash_sleep(self):
+        """
+        Simulates a crash by:
+        1. Temporarily disconnects from network to allow new leader election
+        """
+        self.simulating_crash_ongoing = True
+        
+        # Close current socket
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None
+        
+        print(f"[{self.name}] Going to sleep for 10 seconds to allow new leader election...")
+        time.sleep(10)
+        
+        # Create and bind new socket
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.ip, self.port))
+        self.server_socket.listen(5)
+        
+        self.simulating_crash_ongoing = False
+        print(f"[{self.name}] Node rejoining cluster with log: {self.prepare_log}")
 
     # ------------------- 2PC Handlers -------------------
 
@@ -185,6 +210,12 @@ class TwoPhaseCommitNode(Node):
 
     def handle_2pc_commit(self, data):
         """Handle commit phase of 2PC"""
+        simulation_num = data.get('simulation_num', 0)
+        if simulation_num == SimulationScenario.CRASH_BEFORE_COMMIT.value:
+            self.simulate_crash_sleep()
+            print("Simulated crash scenario. Aborting transaction.")
+            return {'status': 'abort'}
+        
         if self.state != 'Leader':
             print(f"[{self.name}] Not the cluster leader, rejecting 2PC commit")
             return {'status': 'error', 'message': 'Not the cluster leader'}

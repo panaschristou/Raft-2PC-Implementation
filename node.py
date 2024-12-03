@@ -651,30 +651,6 @@ class Node:
         print(f"[{self.name}] Node rejoining cluster with log: {self.log}")
         
         return {'status': 'Node crashed'}
-    
-    def simulate_crash_sleep(self):
-        """
-        Simulates a crash by:
-        1. Temporarily disconnects from network to allow new leader election
-        """
-        self.simulating_crash_ongoing = True
-        
-        # Close current socket
-        if self.server_socket:
-            self.server_socket.close()
-            self.server_socket = None
-        
-        print(f"[{self.name}] Going to sleep for 10 seconds to allow new leader election...")
-        time.sleep(10)
-        
-        # Create and bind new socket
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.ip, self.port))
-        self.server_socket.listen(5)
-        
-        self.simulating_crash_ongoing = False
-        print(f"[{self.name}] Node rejoining cluster with log: {self.log}")
         
 
     def send_rpc(self, ip, port, rpc_type, data, timeout=2.0):
