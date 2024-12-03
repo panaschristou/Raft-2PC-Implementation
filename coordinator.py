@@ -77,7 +77,7 @@ class CoordinatorNode:
         account = data.get('account')
         balance = data.get('balance')
         cluster_letter = account[-1] if account.startswith('Account') else account
-        data = {'Balance': int(balance)}
+        data = {'balance': int(balance)}
         
         # Find current RAFT leader for the cluster
         leader = self.find_cluster_leader(cluster_letter)
