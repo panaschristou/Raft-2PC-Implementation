@@ -378,6 +378,20 @@ class TwoPhaseCommitNode(Node):
         self.transaction_status = 'committed'
         print("Transaction committed successfully.")
         return {'status': 'committed'}
+    
+    def handle_2pc_log_prepare(self, data):
+        """Handles logging the prepare phase."""
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+        self.save_prepare_log()
+        return {'status': 'logged_prepare'}
+
+    def handle_2pc_log_commit(self, data):
+        """Handles logging the commit phase."""
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+        self.save_commit_log()
+        return {'status': 'logged_commit'}
 
     # ------------------- Connection Handler -------------------
 
