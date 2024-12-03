@@ -74,7 +74,8 @@ class CoordinatorNode:
         
     def handle_set_account_balance(self, data ):
         """Set account balance from coordinator"""
-        account, balance  = data['transactions'].items()[0]
+        account = data['account']
+        balance = data['balance']
         cluster_letter = account[-1] if account.startswith('Account') else account
         data = {'Balance': int(balance)}
         

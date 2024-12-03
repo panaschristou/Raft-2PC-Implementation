@@ -110,9 +110,10 @@ class Client2PC(BaseClient):
 
     def set_account_balance(self, account, balance):
         cluster_letter = account[-1] if account.startswith('Account') else account
-        transactions = {f'Account{cluster_letter}': int(balance)}  # Ensure balance is int
+
         data = {
-            'transactions': transactions,
+            'account': f'Account{cluster_letter}',
+            'balance': balance,
             'simulation_num': 0
         }
         coordinator_info = COORDINATOR_NODE['node1']
