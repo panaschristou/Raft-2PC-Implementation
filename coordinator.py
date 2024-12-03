@@ -4,6 +4,7 @@ import socket
 import json
 import sys
 import threading
+import time
 
 class CoordinatorNode:
     def __init__(self, name):
@@ -126,12 +127,23 @@ class CoordinatorNode:
         
         for leader, tx in leader_transactions.items():
             node_info = self.get_node_info(leader)
-            response = self.send_rpc(
-                node_info['ip'],
-                node_info['port'],
-                '2pc_prepare',
-                tx
-            )
+            
+            #--------------- RPC with timeout ---------------
+            start_time = time.time()
+            response = None
+            while time.time() - start_time < self.timeout_duration:
+                response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_prepare', tx)
+                if response:
+                    break
+                time.sleep(0.1)  # Avoid busy-waiting
+            #------------------------------------------------
+            
+            # response = self.send_rpc(
+            #     node_info['ip'],
+            #     node_info['port'],
+            #     '2pc_prepare',
+            #     tx
+            # )
             
             if not response:
                 print(f"No response from leader {leader} during prepare phase")
@@ -149,13 +161,29 @@ class CoordinatorNode:
         if prepared:
             for leader, tx in leader_transactions.items():
                 node_info = self.get_node_info(leader)
-                response = self.send_rpc(
-                    node_info['ip'],
-                    node_info['port'],
-                    '2pc_commit',
-                    tx
-                )
-                if not response or response.get('status') != 'committed':
+                
+                #--------------- RPC with timeout ---------------
+                start_time = time.time()
+                response = None
+                while time.time() - start_time < self.timeout_duration:
+                    response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_commit', tx)
+                    if response:
+                        break
+                    time.sleep(0.1)  # Avoid busy-waiting
+                #------------------------------------------------
+                
+                # response = self.send_rpc(
+                #     node_info['ip'],
+                #     node_info['port'],
+                #     '2pc_commit',
+                #     tx
+                # )
+                
+                if not response:
+                    print(f"No response from leader {leader} during commit phase")
+                    break
+            
+                if response.get('status') != 'committed':
                     return False
 
         return prepared

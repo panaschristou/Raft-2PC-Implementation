@@ -510,12 +510,27 @@ class TwoPhaseCommitNode(Node):
         for node_name, node_info in self.cluster_nodes.items():
             if node_name != self.name:
                 try:
-                    response = self.send_rpc(
-                        node_info['ip'],
-                        node_info['port'],
-                        'RaftReplicate',
-                        {'type': data_type, 'data': data}
-                    )
+                    #--------------- RPC with timeout ---------------
+                    start_time = time.time()
+                    response = None
+                    while time.time() - start_time < self.timeout_duration:
+                        response = self.send_rpc(node_info['ip'], node_info['port'], 'RaftReplicate', {'type': data_type, 'data': data})
+                        if response:
+                            break
+                        time.sleep(0.1)  # Avoid busy-waiting
+                    #------------------------------------------------
+                    
+                    # response = self.send_rpc(
+                    #     node_info['ip'],
+                    #     node_info['port'],
+                    #     'RaftReplicate',
+                    #     {'type': data_type, 'data': data}
+                    # )
+                    
+                    if not response:
+                        print(f"No response from leader {node_name} during {data_type} phase")
+                        break
+                
                     if response and response.get('status') == 'success':
                         print(f"[{self.name}] Successfully replicated to {node_name}")
                 except Exception as e:
