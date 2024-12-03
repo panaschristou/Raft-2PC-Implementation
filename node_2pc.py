@@ -171,6 +171,9 @@ class TwoPhaseCommitNode(Node):
             self.prepare_log.append(log_entry)
             # Replicate to RAFT followers
             self.replicate_to_cluster('prepare_log', log_entry)
+            # Save the the prepare consensus in the persisten prepare log file
+            self.save_prepare_log()
+            print("Prepare phase successfully logged for all participants.")
             return {'status': 'prepared'}
         return {'status': 'abort'}
 
@@ -184,6 +187,9 @@ class TwoPhaseCommitNode(Node):
             # Get transaction for this cluster
             account_key = f'Account{self.cluster_name}'
             cluster_delta = data['transactions'].get(account_key, 0)
+            simulation_num = data.get('simulation_num', 0)
+            log_entry = self.prepare_log_entry({'transactions': data['transactions'], 'simulation_num': simulation_num})
+            self.commit_log.append(log_entry)
             
             print(f'[{self.name}] Processing commit for cluster {self.cluster_name}')
             print(f'[{self.name}] Transaction data: {data}')
@@ -195,7 +201,10 @@ class TwoPhaseCommitNode(Node):
             
             # Replicate to RAFT followers
             self.replicate_to_cluster('account_balance', self.account_balance)
-            
+            self.replicate_to_cluster('commit_log', log_entry)
+            # Save the the prepare consensus in the persisten prepare log file
+            self.save_commit_log()
+            print("Commit phase successfully logged for all participants.")
             return {'status': 'committed'}
         except Exception as e:
             print(f"[{self.name}] Error in commit handling: {e}")
