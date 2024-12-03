@@ -24,6 +24,8 @@ class TwoPhaseCommitNode(Node):
         if role == "Participant":
             self.load_account_balance()
         self.load_prepare_log()
+        
+    # ------------------- Cluster Utilities -------------------
 
     def _determine_cluster(self):
         """Determines which RAFT cluster this node belongs to."""
@@ -143,6 +145,12 @@ class TwoPhaseCommitNode(Node):
         }
         self.transaction_id += 1
         return entry
+    
+    def check_transaction_status(self):
+        """Check the status of the last transaction."""
+        if self.transaction_status:
+            return {'status': self.transaction_status}
+        return {'status': 'No transaction has been executed yet.'}
 
     # ------------------- 2PC Handlers -------------------
 

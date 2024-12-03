@@ -119,7 +119,7 @@ class Client2PC(BaseClient):
         response = self.send_rpc(
             coordinator_info['ip'],
             coordinator_info['port'],
-            '2pc_request',
+            'SetBalance',
             data
         )
         if response and response.get('status') == 'committed':
@@ -155,7 +155,7 @@ if __name__ == '__main__':
         print("  python client_2pc.py leader_change")
         print("  python client_2pc.py simulate_crash [node_name]")
         print("  python client_2pc.py print_logs")
-        print("  python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (optional)] [node crash simulation # (Default = 0)]")
+        print("  python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (Default = False)] [node crash simulation # (Default = 0)]")
         print("  python client_2pc.py check_status")
         print("  python client_2pc.py get_balances")
         print("  python client_2pc.py set_balance [node_name] [balance]")
