@@ -167,23 +167,25 @@ class TwoPhaseCommitNode(Node):
         return {'status': 'abort'}
 
     def handle_2pc_commit(self, data):
+        """Handle commit phase of 2PC"""
         if self.state != 'Leader':
+            print(f"[{self.name}] Not the cluster leader, rejecting 2PC commit")
             return {'status': 'error', 'message': 'Not the cluster leader'}
-        
+
         try:
             # Get transaction for this cluster
             account_key = f'Account{self.cluster_name}'
             cluster_delta = data['transactions'].get(account_key, 0)
             
             print(f'[{self.name}] Processing commit for cluster {self.cluster_name}')
-            print(f'[{self.name}] Transaction delta: {cluster_delta}')
+            print(f'[{self.name}] Transaction data: {data}')
             print(f'[{self.name}] Current balance: {self.account_balance}')
             
             # Update balance
             self.commit_transaction(cluster_delta)
             print(f'[{self.name}] New balance: {self.account_balance}')
             
-            # Replicate to followers
+            # Replicate to RAFT followers
             self.replicate_to_cluster('account_balance', self.account_balance)
             
             return {'status': 'committed'}
