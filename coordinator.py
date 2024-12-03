@@ -89,25 +89,36 @@ class CoordinatorNode:
                 print(f"No leader found for cluster {cluster_letter}")
                 return False
                 
+            # Send only relevant transaction to each leader
             leader_transactions[leader] = {
-            'transactions': {cluster_id: delta},
-            'simulation_num': 0
-        }
+                'transactions': {cluster_id: delta},
+                'simulation_num': 0
+            }
 
         # Phase 1: Prepare
         prepared = True
+        prepare_responses = {}
+        
         for leader, tx in leader_transactions.items():
             node_info = self.get_node_info(leader)
             response = self.send_rpc(
                 node_info['ip'],
                 node_info['port'],
                 '2pc_prepare',
-                tx  # Send transaction data directly
+                tx
             )
             
-            if not response or response.get('status') != 'prepared':
+            if not response:
+                print(f"No response from leader {leader} during prepare phase")
                 prepared = False
                 break
+                
+            if response.get('status') != 'prepared':
+                print(f"Leader {leader} not prepared")
+                prepared = False
+                break
+                
+            prepare_responses[leader] = response
 
         # Phase 2: Commit
         if prepared:
@@ -117,7 +128,7 @@ class CoordinatorNode:
                     node_info['ip'],
                     node_info['port'],
                     '2pc_commit',
-                    tx  # Send transaction data directly
+                    tx
                 )
                 if not response or response.get('status') != 'committed':
                     return False
