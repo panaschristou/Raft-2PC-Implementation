@@ -1,7 +1,8 @@
+# client.py
 import socket
 import json
 import sys
-from config import NODES
+from config import NODES, CLUSTER_A_NODES, CLUSTER_B_NODES
 
 class BaseClient:
     """
@@ -64,21 +65,33 @@ class BaseClient:
                 print(f"Failed to get log from {node_name}")
 
     def trigger_leader_change(self):
-        for node_name in NODES:
-            node_info = NODES[node_name]
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'TriggerLeaderChange', {})
-            if response and response.get('status') == 'Leader stepping down':
-                print(f"Leader {node_name} is stepping down.")
-                return
-        print("No leader found to step down.")
+            """Now tries all nodes in both clusters."""
+            for nodes in [CLUSTER_A_NODES, CLUSTER_B_NODES]:
+                for node_name, node_info in nodes.items():
+                    response = self.send_rpc(
+                        node_info['ip'],
+                        node_info['port'],
+                        'TriggerLeaderChange',
+                        {}
+                    )
+                    if response and response.get('status') == 'Leader stepping down':
+                        print(f"Leader {node_name} is stepping down.")
+                        return
 
     def simulate_crash(self, node_name):
-        if node_name not in NODES:
+        """Updated to handle new cluster structure."""
+        cluster_nodes = {**CLUSTER_A_NODES, **CLUSTER_B_NODES}
+        if node_name not in cluster_nodes:
             print(f"Invalid node name: {node_name}")
             return
 
-        node_info = NODES[node_name]
-        response = self.send_rpc(node_info['ip'], node_info['port'], 'SimulateCrash', {})
+        node_info = cluster_nodes[node_name]
+        response = self.send_rpc(
+            node_info['ip'],
+            node_info['port'],
+            'SimulateCrash',
+            {}
+        )
         if response and response.get('status') == 'Node crashed':
             print(f"Node {node_name} has simulated a crash")
         else:
