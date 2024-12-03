@@ -13,6 +13,7 @@ class CoordinatorNode:
         self.port = COORDINATOR_NODE[name]['port']
         self.running = True
         self.server_socket = None
+        self.timeout_duration = 2.0
         self.cluster_leaders = {
             'A': None,
             'B': None

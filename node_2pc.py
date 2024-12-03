@@ -12,7 +12,7 @@ class TwoPhaseCommitNode(Node):
         self.account_balance = 0
         self.transaction_id = 0
         self.transaction_status = None
-        self.timeout_duration = 1
+        self.timeout_duration = 2
         self.prepare_log = []
         self.commit_log = []
         self.account_file = f"{self.name}_account.txt"

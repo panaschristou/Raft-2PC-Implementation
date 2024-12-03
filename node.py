@@ -637,8 +637,8 @@ class Node:
             self.server_socket.close()
             self.server_socket = None
         
-        print(f"[{self.name}] Going to sleep for 20 seconds to allow new leader election...")
-        time.sleep(20)
+        print(f"[{self.name}] Going to sleep for 10 seconds to allow new leader election...")
+        time.sleep(10)
         
         # Create and bind new socket
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
