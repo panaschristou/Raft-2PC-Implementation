@@ -17,7 +17,11 @@ class Client2PC(BaseClient):
             
             if bonus_value is not None:
                 transactions = {'AccountA': bonus_value, 'AccountB': bonus_value}
-
+        
+        transactions = {
+        'AccountA': transactions.get('AccountA', 0),
+        'AccountB': transactions.get('AccountB', 0)
+        }
         coordinator_info = COORDINATOR_NODE['node1']
         print(f"Sending transaction to coordinator: {transactions}")
         response = self.send_rpc(
@@ -38,37 +42,55 @@ class Client2PC(BaseClient):
         """Retrieve current account balances from RAFT cluster leaders."""
         print("Fetching account balances...")
         
-        # Try each node in Cluster A until we find the leader
-        for node_name, node_info in CLUSTER_A_NODES.items():
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
-            if response and response.get('status') == 'success':
-                print(f"Account A balance: {response.get('balance')}")
+        # Get balance from Cluster A leader
+        balance_a = self._get_cluster_balance('A')
+        print(f"Account A balance: {balance_a}")
+        
+        # Get balance from Cluster B leader
+        balance_b = self._get_cluster_balance('B')
+        print(f"Account B balance: {balance_b}")
+
+    def _get_cluster_balance(self, cluster_letter):
+        """Helper to get balance from a cluster's leader."""
+        cluster_nodes = CLUSTER_A_NODES if cluster_letter == 'A' else CLUSTER_B_NODES
+        
+        # First identify the leader
+        for node_name, node_info in cluster_nodes.items():
+            leader_response = self.send_rpc(
+                node_info['ip'], 
+                node_info['port'],
+                'GetLeaderStatus',
+                {}
+            )
+            
+            if leader_response and leader_response.get('is_leader'):
+                # Found the leader, get balance
+                balance_response = self.send_rpc(
+                    node_info['ip'],
+                    node_info['port'],
+                    'GetBalance',
+                    {}
+                )
+                if balance_response and balance_response.get('status') == 'success':
+                    return balance_response.get('balance')
                 break
-                
-        # Try each node in Cluster B until we find the leader
-        for node_name, node_info in CLUSTER_B_NODES.items():
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
-            if response and response.get('status') == 'success':
-                print(f"Account B balance: {response.get('balance')}")
-                break
+        
+        return 0  # Return 0 if no leader found or couldn't get balance
 
     def set_account_balance(self, account, balance):
-        """Set account balance by finding and updating the RAFT leader."""
-        # Extract cluster letter (A or B) from AccountA/AccountB format
         cluster_letter = account[-1] if account.startswith('Account') else account
-        
-        # Create transaction for coordinator with proper account format
-        transactions = {f'Account{cluster_letter}': balance}
-        
-        # Send to coordinator as a transaction
+        transactions = {f'Account{cluster_letter}': int(balance)}  # Ensure balance is int
+        data = {
+            'transactions': transactions,
+            'simulation_num': 0
+        }
         coordinator_info = COORDINATOR_NODE['node1']
         response = self.send_rpc(
             coordinator_info['ip'],
             coordinator_info['port'],
             '2pc_request',
-            {'transactions': transactions}
+            data
         )
-        
         if response and response.get('status') == 'committed':
             print(f"Successfully set balance for Account {cluster_letter} to {balance}")
         else:
