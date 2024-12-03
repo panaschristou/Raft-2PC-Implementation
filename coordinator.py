@@ -49,7 +49,7 @@ class CoordinatorNode:
                 if rpc_type == 'GetLeaderStatus':
                     response = {'is_leader': self.state == 'Leader'}
                 elif rpc_type == '2pc_request':
-                    response = {'status': 'committed' if self.start_2pc(request['data']['transactions']) else 'aborted'}
+                    response = {'status': 'committed' if self.start_2pc(request['data']) else 'aborted'}
                 elif rpc_type == 'SetBalance':
                     response = self.handle_set_account_balance(request['data'])
                 else:
@@ -97,7 +97,7 @@ class CoordinatorNode:
         )
         return response
 
-    def start_2pc(self, transactions):
+    def start_2pc(self, data):
         """
         Start 2PC protocol with account-level transactions
         Args:
@@ -105,6 +105,8 @@ class CoordinatorNode:
         """
         # Convert account-level transactions to current leader-level transactions
         leader_transactions = {}
+        transactions = data['transactions']
+        simulation_num = data['simulation_num']
         
         # Find current RAFT leaders for each account cluster
         for cluster_id, delta in transactions.items():
@@ -119,7 +121,7 @@ class CoordinatorNode:
             # Send only relevant transaction to each leader
             leader_transactions[leader] = {
                 'transactions': {cluster_id: delta},
-                'simulation_num': 0
+                'simulation_num': simulation_num
             }
 
         # Phase 1: Prepare
