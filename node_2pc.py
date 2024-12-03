@@ -164,10 +164,6 @@ class TwoPhaseCommitNode(Node):
         cluster_delta = data['transactions'].get(f'Account{self.cluster_name}', 0)
         simulation_num = data.get('simulation_num', 0)
         
-        if simulation_num == SimulationScenario.CRASH_BEFORE_PREPARE.value:
-            print("Simulated crash scenario. Aborting transaction.")
-            return {'status': 'abort'}
-        
         print(f'[{self.name}] Processing prepare for cluster {self.cluster_name} with delta: {cluster_delta}')
 
         if self.prepare_transaction(cluster_delta):
@@ -178,6 +174,12 @@ class TwoPhaseCommitNode(Node):
             # Save the the prepare consensus in the persisten prepare log file
             self.save_prepare_log()
             print("Prepare phase successfully logged for all participants.")
+            
+            if simulation_num == SimulationScenario.CRASH_BEFORE_PREPARE.value:
+                self.simulate_crash_sleep()
+                print("Simulated crash scenario. Aborting transaction.")
+                return {'status': 'abort'}
+            
             return {'status': 'prepared'}
         return {'status': 'abort'}
 
