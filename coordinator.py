@@ -48,6 +48,8 @@ class CoordinatorNode:
                     response = {'is_leader': self.state == 'Leader'}
                 elif rpc_type == '2pc_request':
                     response = {'status': 'committed' if self.start_2pc(request['data']['transactions']) else 'aborted'}
+                elif rpc_type == 'SetBalance':
+                    response = self.handle_set_account_balance(request['data'])
                 else:
                     response = {'error': 'Unknown RPC type'}
 
