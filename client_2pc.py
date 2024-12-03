@@ -10,20 +10,48 @@ class Client2PC(BaseClient):
         Now uses account-level transactions instead of node-specific ones.
         Example: {"AccountA": -100, "AccountB": 100}
         """
+        # if bonus:
+        #     print("Performing transaction with bonus...")
+        #     balance_a, balance_b, bonus_value = self.calculate_bonus()
+        #     print(f"Balance A: {balance_a}, Balance B: {balance_b}, Bonus Value: {bonus_value}")
+            
+        #     if bonus_value is not None:
+        #         transactions = {'AccountA': bonus_value, 'AccountB': bonus_value}
+        
+        # transactions = {
+        # 'AccountA': transactions.get('AccountA', 0),
+        # 'AccountB': transactions.get('AccountB', 0)
+        # }
+        # coordinator_info = COORDINATOR_NODE['node1']
+        # print(f"Sending transaction to coordinator: {transactions}")
+        # response = self.send_rpc(
+        #     coordinator_info['ip'],
+        #     coordinator_info['port'],
+        #     '2pc_request',
+        #     {'transactions': transactions, 'simulation_num': simulation_num}
+        # )
+
+        # if response and response.get('status') == 'committed':
+        #     print("Transaction successfully committed.")
+        # elif response and response.get('status') == 'aborted':
+        #     print("Transaction aborted.")
+        # else:
+        #     print("Failed to process the transaction.")
         if bonus:
-            print("Performing transaction with bonus...")
+            print("Performing bonus transaction...")
             balance_a, balance_b, bonus_value = self.calculate_bonus()
-            print(f"Balance A: {balance_a}, Balance B: {balance_b}, Bonus Value: {bonus_value}")
             
             if bonus_value is not None:
-                transactions = {'AccountA': bonus_value, 'AccountB': bonus_value}
+                # Add bonus to both accounts
+                transactions = {
+                    'AccountA': bonus_value,
+                    'AccountB': bonus_value
+                }
+                print(f"Applying bonus of {bonus_value} to both accounts")
         
-        transactions = {
-        'AccountA': transactions.get('AccountA', 0),
-        'AccountB': transactions.get('AccountB', 0)
-        }
         coordinator_info = COORDINATOR_NODE['node1']
         print(f"Sending transaction to coordinator: {transactions}")
+        
         response = self.send_rpc(
             coordinator_info['ip'],
             coordinator_info['port'],
@@ -33,10 +61,13 @@ class Client2PC(BaseClient):
 
         if response and response.get('status') == 'committed':
             print("Transaction successfully committed.")
+            return True
         elif response and response.get('status') == 'aborted':
             print("Transaction aborted.")
+            return False
         else:
             print("Failed to process the transaction.")
+            return False
 
     def get_account_balances(self):
         """Retrieve current account balances from RAFT cluster leaders."""
@@ -95,6 +126,26 @@ class Client2PC(BaseClient):
             print(f"Successfully set balance for Account {cluster_letter} to {balance}")
         else:
             print(f"Failed to set balance for Account {cluster_letter}")
+
+    def calculate_bonus(self):
+        """Calculate 20% bonus based on current account balances"""
+        print("Calculating bonus...")
+        
+        # Get current balances
+        balance_a = self._get_cluster_balance('A')
+        balance_b = self._get_cluster_balance('B')
+        
+        if balance_a is None or balance_b is None:
+            print("Could not retrieve current balances")
+            return None, None, None
+            
+        # Calculate 20% bonus
+        bonus_value = int(balance_a * 0.2)  # Convert to int to avoid floating point issues
+        
+        print(f"Current balances - A: {balance_a}, B: {balance_b}")
+        print(f"Bonus amount (20% of A): {bonus_value}")
+        
+        return balance_a, balance_b, bonus_value
 
 if __name__ == '__main__':
     client = Client2PC()
