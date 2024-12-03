@@ -122,7 +122,7 @@ class Client2PC(BaseClient):
             'SetBalance',
             data
         )
-        if response and response.get('status') == 'committed':
+        if response and response.get('status') == 'success':
             print(f"Successfully set balance for Account {cluster_letter} to {balance}")
         else:
             print(f"Failed to set balance for Account {cluster_letter}")

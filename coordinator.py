@@ -69,6 +69,29 @@ class CoordinatorNode:
         except Exception as e:
             print(f"RPC Error: {e}")
             return None
+        
+    def handle_set_account_balance(self, data ):
+        """Set account balance from coordinator"""
+        account = data['transactions'].keys()[0]
+        balance = data['transactions'].values()[0]
+        cluster_letter = account[-1] if account.startswith('Account') else account
+        data = {'Balance': int(balance)}
+        
+        # Find current RAFT leader for the cluster
+        leader = self.find_cluster_leader(cluster_letter)
+        if not leader:
+            print(f"No leader found for cluster {cluster_letter}")
+            return False
+        
+        # Send the transaction to the leader
+        node_info = self.get_node_info(leader)
+        response = self.send_rpc(
+            node_info['ip'],
+            node_info['port'],
+            'SetBalance',
+            data
+        )
+        return response
 
     def start_2pc(self, transactions):
         """
