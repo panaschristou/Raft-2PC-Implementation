@@ -1,3 +1,4 @@
+# node.py
 import socket
 import threading
 import time
@@ -5,17 +6,16 @@ import json
 import sys
 import random
 import os
-from config import NODES, ELECTION_TIMEOUT, HEARTBEAT_INTERVAL
+from config import NODES, ELECTION_TIMEOUT, HEARTBEAT_INTERVAL, CLUSTER_A_NODES, CLUSTER_B_NODES
 
 class Node:
     """
     Represents a node in the Raft consensus algorithm. Implements leader election, log replication, and consensus mechanisms. Also fulfills all the scenarios defined in the assignment.
     """
-    def __init__(self, name, cluster_nodes=None):
+    def __init__(self, name):
         self.name = name # Unique identifier for the node
         self.ip = NODES[self.name]['ip'] # Node's IP address. This ise defined in the config file
         self.port = NODES[self.name]['port'] # Node's port number. This is defined in the config file
-        self.cluster_nodes = cluster_nodes if cluster_nodes else NODES
         # Raft state
         self.state = 'Follower' # Current state (Follower/Candidate/Leader)
         self.current_term = 0 # Current term number
@@ -46,6 +46,25 @@ class Node:
             open(self.log_filename, 'w').close()   # Create empty log file if doesn't exist
         else:
             self.load_persistent_log()             # Load existing log entries
+
+        self.cluster_name = self._determine_cluster()
+        self.cluster_nodes = self._get_cluster_nodes()
+
+    def _determine_cluster(self):
+        """Determines which RAFT cluster this node belongs to."""
+        if self.name.startswith('nodeA'):
+            return 'A'
+        elif self.name.startswith('nodeB'):
+            return 'B'
+        return None
+
+    def _get_cluster_nodes(self):
+        """Returns the nodes in this node's RAFT cluster."""
+        if self.cluster_name == 'A':
+            return CLUSTER_A_NODES
+        elif self.cluster_name == 'B':
+            return CLUSTER_B_NODES
+        return {}    
 
     def start(self):
         """
@@ -120,17 +139,21 @@ class Node:
             with open(self.log_filename, 'r') as f:
                 lines = f.readlines()
                 # Reconstruct log entries from stored values
-                for line in lines:
-                    entry = json.loads(line.strip())
+                for idx, line in enumerate(lines):
+                    entry = {
+                        'term': self.current_term,  # Use current term as we don't store terms
+                        'value': line.strip(),      # Remove any whitespace/newlines
+                        'index': idx                # Maintain original entry ordering
+                    }
                     self.log.append(entry)
-                # Update indices
+                
+                # If log exists, update indices to match loaded state
                 if self.log:
                     self.commit_index = len(self.log) - 1
                     self.last_applied = self.commit_index
                     print(f"[{self.name}] Loaded {len(self.log)} entries from persistent storage")
         except FileNotFoundError:
             print(f"[{self.name}] No existing log found, starting fresh")
-
 
     def handle_client_connection(self, client_socket: socket.socket):
         """
@@ -349,40 +372,35 @@ class Node:
         Applies a single log entry to the state machine (persistent storage).
         """
         with open(self.log_filename, 'a') as f:
-            f.write(json.dumps(entry) + '\n')
-        print(f"[{self.name}] Applied entry to log: {entry}")
+            f.write(f"{entry['value']}\n")
+        print(f"[{self.name}] Applied entry to log: {entry['value']}")
 
     def start_election(self):
         """
         Initiates leader election process when election timeout occurs.
-        Implements the candidate's role in Raft's leader election protocol.
-        
-        The function:
-        1. Transitions to candidate state
-        2. Increments current term
-        3. Votes for itself
-        4. Requests votes from other nodes
-        5. Becomes leader if majority votes received
+        Now only requests votes from nodes in the same cluster.
         """
         # Initialize election state
-        self.state = 'Candidate'  # Transition to candidate state
-        self.current_term += 1    # Increment term
-        self.voted_for = self.name  # Vote for self
-        self.leader_id = None     # Clear any known leader
-        votes_received = 1        # Count self vote
-
+        self.state = 'Candidate'
+        self.current_term += 1
+        self.voted_for = self.name
+        self.leader_id = None
+        votes_received = 1  # Count self vote
+        
         print(f"[{self.name}] Starting election for term {self.current_term}")
-        self.reset_election_timer()  # Reset election timeout
+        self.reset_election_timer()
 
         # Prepare vote request arguments
         last_log_index = len(self.log) - 1
         last_log_term = self.log[last_log_index]['term'] if self.log else 0
 
-        # Request votes from all other nodes
+        # Request votes only from nodes in the same cluster
+        if not self.cluster_nodes:  # Skip if not part of a cluster
+            return
+
         for node_name in self.cluster_nodes:
             if node_name != self.name:
                 try:
-                    # Send RequestVote RPC to each node
                     response = self.send_rpc(
                         self.cluster_nodes[node_name]['ip'],
                         self.cluster_nodes[node_name]['port'],
@@ -398,146 +416,86 @@ class Node:
                     # Process vote response
                     if response and response.get('vote_granted'):
                         votes_received += 1
-                        # Check if we have majority and are still candidate
-                        if (votes_received > len(self.cluster_nodes) // 2 and 
-                            self.state == 'Candidate'):  
-                            self.become_leader()
-                            break
+
+                    # Check if we have majority within our cluster
+                    if (votes_received > len(self.cluster_nodes) // 2 
+                        and self.state == 'Candidate'):
+                        self.become_leader()
+                        break
+
                     # Step down if we discover a higher term
                     elif response and response['term'] > self.current_term:
                         self.current_term = response['term']
                         self.state = 'Follower'
                         self.voted_for = None
                         break
+
                 except Exception as e:
                     print(f"[{self.name}] Error requesting vote from {node_name}: {e}")
 
     def check_cluster_health(self):
-        """
-        Checks the health of the cluster by attempting to contact all nodes.
-        Used before becoming leader to ensure there's a majority of nodes available.
-        """
+        """Checks the health of the cluster by attempting to contact nodes in the same cluster."""
+        if not self.cluster_nodes:
+            return 0
+            
         reachable_nodes = 1  # Count self
         for node_name in self.cluster_nodes:
             if node_name != self.name:
-                try: # Send empty AppendEntries as a heartbeat to check connectivity
+                try:
                     response = self.send_rpc(
                         self.cluster_nodes[node_name]['ip'],
                         self.cluster_nodes[node_name]['port'],
-                        'AppendEntries',  # Use as heartbeat
+                        'AppendEntries',
                         {
                             'term': self.current_term,
                             'leader_name': self.name,
                             'prev_log_index': len(self.log) - 1,
                             'prev_log_term': self.log[-1]['term'] if self.log else 0,
-                            'entries': [], # Empty entries for heartbeat
+                            'entries': [],
                             'leader_commit': self.commit_index
                         }
                     )
-                    if response is not None: # Increment counter if node responds
+                    if response is not None:
                         reachable_nodes += 1
-                except Exception: # Skip unreachable nodes
+                except Exception:
                     continue
         return reachable_nodes
 
     def become_leader(self):
-        """
-        Transitions node to leader state if conditions are met.
-        """
+        """Transitions node to leader state if conditions are met."""
         # Check cluster health before becoming leader
         reachable_nodes = self.check_cluster_health()
-        # Require majority of nodes to be reachable
-        if reachable_nodes <= len(NODES) // 2:
-            print(f"[{self.name}] Cannot become leader: only {reachable_nodes}/{len(self.cluster_nodes)} nodes reachable")
-            self.state = 'Follower' # Step down if can't reach majority
+        
+        # Require majority of nodes in the CLUSTER to be reachable (not all NODES)
+        cluster_size = len(self.cluster_nodes)
+        if reachable_nodes <= cluster_size // 2:
+            print(f"[{self.name}] Cannot become leader: only {reachable_nodes}/{cluster_size} nodes reachable")
+            self.state = 'Follower'
             return
-        # Transition to leader
+
         print(f"[{self.name}] Becoming leader for term {self.current_term}")
         self.state = 'Leader'
         self.leader_id = self.name
-        
-        # Initialize leader state
-        self.next_index = {node: len(self.log) for node in NODES if node != self.name}
-        self.match_index = {node: -1 for node in NODES if node != self.name}
-        
+
+        # Initialize leader state only for cluster nodes
+        self.next_index = {node: len(self.log) for node in self.cluster_nodes if node != self.name}
+        self.match_index = {node: -1 for node in self.cluster_nodes if node != self.name}
+
         # Send immediate heartbeat
         self.send_heartbeats()
 
     def send_heartbeats(self):
-        """
-        Sends heartbeats to all nodes in the cluster, including any new log entries. This maintains leader state and keep followers up-to-date.
-        """
+        """Sends heartbeats only to nodes in the same cluster."""
+        if not self.cluster_nodes:
+            return
+            
         for node_name in self.cluster_nodes:
             if node_name != self.name:
                 entries = []
                 next_idx = self.next_index.get(node_name, len(self.log))
-                
                 if next_idx < len(self.log):
                     entries = self.log[next_idx:]
-                
                 self.send_append_entries(node_name, entries)
-
-
-    def submit_value(self, delta):
-        """
-        Submit a value to the Raft cluster and wait for it to be committed.
-        """
-        if self.state != 'Leader':
-            # Redirect to leader
-            leader_name = self.leader_id
-            if leader_name and leader_name != self.name:
-                leader_info = NODES[leader_name]
-                response = self.send_rpc(leader_info['ip'], leader_info['port'], 'SubmitValue', {'value': delta})
-                return response.get('success', False)
-            else:
-                return False  # No leader known
-        else:
-            # Leader appends the entry and replicates
-            entry = {
-                'term': self.current_term,
-                'value': delta,
-                'index': len(self.log)
-            }
-            self.log.append(entry)
-            print(f"[{self.name}] Appended new entry to log: {entry}")
-
-            # Initialize count for successful replications
-            success_count = 1  # Count self
-            majority = len(self.cluster_nodes) // 2 + 1
-
-            # Start threads to replicate log to followers
-            replication_results = []
-            replication_threads = []
-            replication_lock = threading.Lock()
-
-            def replicate_to_node(node_name):
-                nonlocal success_count
-                if self.replicate_log_to_follower(node_name):
-                    with replication_lock:
-                        success_count += 1
-
-            for node_name in self.cluster_nodes:
-                if node_name != self.name:
-                    thread = threading.Thread(target=replicate_to_node, args=(node_name,))
-                    replication_threads.append(thread)
-                    thread.start()
-
-            # Wait for all threads to finish or for majority to be reached
-            while success_count < majority and any(thread.is_alive() for thread in replication_threads):
-                time.sleep(0.1)
-
-            # Wait for all threads to finish
-            for thread in replication_threads:
-                thread.join()
-
-            # Check if majority was achieved
-            if success_count >= majority:
-                self.commit_index = len(self.log) - 1
-                self.apply_committed_entries()
-                return True
-            else:
-                self.log.pop()
-                return False
 
     def handle_client_submit(self, data):
         """
@@ -568,13 +526,13 @@ class Node:
         success_count = 1  # Count self as success
         
         # Try to replicate to all other nodes
-        for node_name in self.cluster_nodes:
+        for node_name in NODES:
             if node_name != self.name:
                 if self.replicate_log_to_follower(node_name):
                     success_count += 1
 
         # Check if we achieved majority consensus
-        if success_count > len(self.cluster_nodes) // 2:
+        if success_count > len(NODES) // 2:
             # Majority successful, commit and apply
             self.commit_index = len(self.log) - 1
             self.apply_committed_entries()
@@ -648,7 +606,7 @@ class Node:
             return {'status': 'Leader stepping down'}
         return {'status': 'Not a leader'}
 
-    def simulate_crash(self, crash_duration=20):
+    def simulate_crash(self):
         """
         Simulates a crash by:
         1. If leader: appends entries to log before sleeping
