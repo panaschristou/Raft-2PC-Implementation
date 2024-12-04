@@ -40,6 +40,7 @@ class CoordinatorNode:
                     print(f"[{self.name}] Server error: {e}")
 
     def handle_client_connection(self, client_socket):
+        """Manages incoming client connections and RPC requests."""
         try:
             data = client_socket.recv(4096).decode()
             if data:
