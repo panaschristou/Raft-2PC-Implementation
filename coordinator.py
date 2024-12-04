@@ -196,6 +196,21 @@ class CoordinatorNode:
                 #     tx
                 # )
                 
+                if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
+                    print(f"[{self.name}] Simulating coordinator crash after sending commit requests")
+                    print('Getting all logs to compare commit and prepare last entries.')
+                    all_logs = self.get_all_logs()
+                    for node_name, logs in all_logs.items():
+                        for leader, tx in leader_transactions.items():
+                            if node_name == leader:
+                                last_prepare_transaction_id = logs[0].get('transaction_id')
+                                last_commit_transaction_id = logs[1].get('transaction_id')
+                                if last_prepare_transaction_id != last_commit_transaction_id:
+                                    print(f"Last prepare and commit transaction IDs do not match for {node_name}")
+                                    return {'status': 'abort', 'message': 'Cluster did not commit while coordinator crashed'}
+                    return {'status': 'committed'}
+                            
+                
                 if not response:
                     print(f"No response from leader {leader} during commit phase")
                     break
@@ -203,7 +218,7 @@ class CoordinatorNode:
                 if response.get('status') != 'committed':
                     return False
 
-        return prepared
+        return {'status': 'committed'}
 
     def find_cluster_leader(self, cluster_letter):
         """
@@ -237,11 +252,11 @@ class CoordinatorNode:
             response = self.send_rpc(
                 node_info['ip'],
                 node_info['port'],
-                'GetLog',
+                'GetLogs',
                 {}
             )
             if response:
-                all_logs[node_name] = response.get('log', [])
+                all_logs[node_name] = response.get('all_logs', [])
         return all_logs
     
     def print_all_logs(self):

@@ -175,6 +175,7 @@ if __name__ == '__main__':
         print("  python client_2pc.py check_status")
         print("  python client_2pc.py get_balances")
         print("  python client_2pc.py set_balance [node_name] [balance]")
+        print(" python client_2pc.py print_all_logs")
         sys.exit(1)
 
     command = sys.argv[1]

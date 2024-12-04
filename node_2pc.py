@@ -179,7 +179,7 @@ class TwoPhaseCommitNode(Node):
         
     def get_logs_for_coordinator(self):
         """Get logs for the coordinator for recovery."""
-        response = {'node_name': self.name, 'prepare_log': self.prepare_log, 'commit_log': self.commit_log, 'raft_log': self.log}
+        response = {'all_logs': {'prepare_log': self.prepare_log, 'commit_log': self.commit_log, 'raft_log': self.log}}
         return response
         
 
