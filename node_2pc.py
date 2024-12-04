@@ -1,7 +1,8 @@
+# node_2pc.py
 import socket
 import json
 from node import Node
-from config import NODES
+from config import NODES, CLUSTER_A_NODES, CLUSTER_B_NODES
 import time
 from config import SimulationScenario
 class TwoPhaseCommitNode(Node):
@@ -11,16 +12,36 @@ class TwoPhaseCommitNode(Node):
         self.account_balance = 0
         self.transaction_id = 0
         self.transaction_status = None
-        self.timeout_duration = 1
+        self.timeout_duration = 2
         self.prepare_log = []
         self.commit_log = []
-        self.commit_log_file = f"{self.name}_commit_log.json"
-        self.prepare_log_file = f"{self.name}_prepare_log.json"
         self.account_file = f"{self.name}_account.txt"
+        self.prepare_log_file = f"{self.name}_prepare_log.json"
+        self.commit_log_file = f"{self.name}_commit_log.json"
+        self.cluster_name = self._determine_cluster()
+        self.cluster_nodes = self._get_cluster_nodes()
 
         if role == "Participant":
             self.load_account_balance()
         self.load_prepare_log()
+        
+    # ------------------- Cluster Utilities -------------------
+
+    def _determine_cluster(self):
+        """Determines which RAFT cluster this node belongs to."""
+        if self.name.startswith('nodeA'):
+            return 'A'
+        elif self.name.startswith('nodeB'):
+            return 'B'
+        return None
+
+    def _get_cluster_nodes(self):
+        """Returns the nodes in this node's RAFT cluster."""
+        if self.cluster_name == 'A':
+            return CLUSTER_A_NODES
+        elif self.cluster_name == 'B':
+            return CLUSTER_B_NODES
+        return {}
 
     # ------------------- Log Management -------------------
 
@@ -89,10 +110,17 @@ class TwoPhaseCommitNode(Node):
         return {'status': 'success', 'node_name': self.name, 'balance': self.account_balance}
 
     def set_account_balance(self, value):
-        """Sets the account balance and saves it."""
+        """Sets the account balance and replicates to followers."""
+        if self.state != 'Leader':
+            return {'status': 'error', 'message': 'Not the leader'}
+            
         self.account_balance = value
         self.save_account_balance()
-        print(f"Account balance set to: {value}")
+        
+        # Replicate to followers
+        self.replicate_to_cluster('account_balance', self.account_balance)
+        
+        print(f"[{self.name}] Account balance set to: {value}")
         return {'status': 'success'}
 
     # ------------------- Transaction Management -------------------
@@ -111,63 +139,137 @@ class TwoPhaseCommitNode(Node):
 
     def prepare_log_entry(self, data):
         """Creates a log entry for a transaction."""
-        log_entry = {
+        entry = {
             'transaction_id': self.transaction_id,
-            'simulation_num': data['simulation_num'],
+            'simulation_num': data.get('simulation_num', 0),  # Use 'get' to prevent KeyError
             'transactions': data['transactions']
         }
-        self.transaction_id += 1
-        return log_entry
+        return entry
+    
+    def check_transaction_status(self):
+        """Check the status of the last transaction."""
+        if self.transaction_status:
+            return {'status': self.transaction_status}
+        return {'status': 'No transaction has been executed yet.'}
+    
+    # ------------------- 2PC Utilities -------------------
+    def simulate_crash_sleep(self):
+        """
+        Simulates a crash by:
+        1. Temporarily disconnects from network to allow new leader election
+        """
+        self.simulating_crash_ongoing = True
+        
+        # Close current socket
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None
+        
+        print(f"[{self.name}] Going to sleep for 10 seconds to allow new leader election...")
+        time.sleep(10)
+        
+        # Create and bind new socket
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.ip, self.port))
+        self.server_socket.listen(5)
+        
+        self.simulating_crash_ongoing = False
+        print(f"[{self.name}] Node rejoining cluster with logs: {self.prepare_log}, {self.commit_log}")
+        
+    def get_logs_for_coordinator(self):
+        """Get logs for the coordinator for recovery."""
+        response = {'all_logs': {'prepare_log': self.prepare_log, 'commit_log': self.commit_log, 'raft_log': self.log}}
+        return response
+        
 
     # ------------------- 2PC Handlers -------------------
 
     def handle_2pc_prepare(self, data):
         """Handles the prepare phase of 2PC."""
-        delta = data['transactions'][self.name]
-        simulation_num = int(data.get('simulation_num', 0))
-        print(f'simulation_num during prepare: {simulation_num}')
+        if self.state != 'Leader':
+            print(f"[{self.name}] Not the cluster leader, rejecting 2PC prepare")
+            return {'status': 'error', 'message': 'Not the cluster leader'}
 
-        if simulation_num == SimulationScenario.CRASH_BEFORE_PREPARE.value:
-            print('Simulation 1: Participant crashes before preparing transaction.')
-            return {'status': 'abort'}
+        # Get transaction for this cluster
+        cluster_delta = data['transactions'].get(f'Account{self.cluster_name}', 0)
+        simulation_num = data.get('simulation_num', 0)
+        
+        print(f'[{self.name}] Processing prepare for cluster {self.cluster_name} with delta: {cluster_delta}')
 
-        if self.prepare_transaction(delta):
-            log_entry = self.prepare_log_entry(data)
+        if self.prepare_transaction(cluster_delta):
+            # Increment transaction ID only during prepare phase and only once.
+            self.transaction_id += 1
+            log_entry = self.prepare_log_entry({'transactions': data['transactions'], 'simulation_num': simulation_num})
             self.prepare_log.append(log_entry)
+            # Replicate to RAFT followers
+            self.replicate_to_cluster('prepare_log', log_entry)
+            # Save the the prepare consensus in the persisten prepare log file
+            self.save_prepare_log()
+            print("Prepare phase successfully logged for all participants.")
+            
+            if simulation_num == SimulationScenario.CRASH_BEFORE_PREPARE.value:
+                self.simulate_crash_sleep()
+                print("Simulated crash scenario. Aborting transaction.")
+                return {'status': 'abort'}
+            
             return {'status': 'prepared'}
         return {'status': 'abort'}
 
     def handle_2pc_commit(self, data):
-        """Handles the commit phase of 2PC."""
-        delta = data['transactions'][self.name]
-        simulation_num = int(data.get('simulation_num', 0))
-        print(f'simulation_num during commit: {simulation_num}')
-
-        log_entry = self.prepare_log_entry(data)
-        self.commit_log.append(log_entry)
-
+        """Handle commit phase of 2PC"""
+        simulation_num = data.get('simulation_num', 0)
         if simulation_num == SimulationScenario.CRASH_BEFORE_COMMIT.value:
-            print('Simulation 2: Participant crashes before committing transaction.')
-            return {'status': 'abort'}
+            self.simulate_crash_sleep()
+            print("Simulated crash scenario 2. Aborting transaction.")
+            return {'status': 'aborted'}
+        
+        if self.state != 'Leader':
+            print(f"[{self.name}] Not the cluster leader, rejecting 2PC commit")
+            return {'status': 'error', 'message': 'Not the cluster leader'}
 
-        self.commit_transaction(delta)
-        return {'status': 'committed'}
-
-    def handle_2pc_log_prepare(self, data):
-        """Handles logging the prepare phase."""
-        self.save_prepare_log()
-        return {'status': 'logged_prepare'}
-
-    def handle_2pc_log_commit(self, data):
-        """Handles logging the commit phase."""
-        self.save_commit_log()
-        return {'status': 'logged_commit'}
+        try:
+            # Get transaction for this cluster
+            account_key = f'Account{self.cluster_name}'
+            cluster_delta = data['transactions'].get(account_key, 0)
+            simulation_num = data.get('simulation_num', 0)
+            log_entry = self.prepare_log_entry({'transactions': data['transactions'], 'simulation_num': simulation_num})
+            self.commit_log.append(log_entry)
+            
+            print(f'[{self.name}] Processing commit for cluster {self.cluster_name}')
+            print(f'[{self.name}] Transaction data: {data}')
+            print(f'[{self.name}] Current balance: {self.account_balance}')
+            
+            # Update balance
+            self.commit_transaction(cluster_delta)
+            print(f'[{self.name}] New balance: {self.account_balance}')
+            
+            # Replicate to RAFT followers
+            self.replicate_to_cluster('account_balance', self.account_balance)
+            self.replicate_to_cluster('commit_log', log_entry)
+            # Save the the prepare consensus in the persisten prepare log file
+            self.save_commit_log()
+            print("Commit phase successfully logged for all participants.")
+            return {'status': 'committed'}
+        except Exception as e:
+            print(f"[{self.name}] Error in commit handling: {e}")
+            return {'status': 'error', 'message': str(e)}
     
     # ------------------- 2PC Request -------------------
 
     def handle_2pc_request(self, data):
+        """Handles the 2PC request from the coordinator."""
         if self.role != 'Coordinator':
             return {'status': 'error', 'message': 'Only the coordinator can handle 2PC requests.'}
+
+        # Convert node-specific transactions to account-level
+        account_transactions = {
+            'AccountA': data['transactions'].get('nodeA1', 0),
+            'AccountB': data['transactions'].get('nodeB1', 0)
+        }
+        
+        # Update the data with account-level transactions
+        data['transactions'] = account_transactions
 
         num_participants = len(NODES) - 1  # Exclude the coordinator
         num_prepared = 0
@@ -250,13 +352,6 @@ class TwoPhaseCommitNode(Node):
         self.save_prepare_log()
         print("Prepare phase successfully logged for all participants.")
 
-        # Simulation-specific handling
-        if int(data['simulation_num']) in [SimulationScenario.COORDINATOR_CRASH_BEFORE_COMMIT.value, SimulationScenario.COORDINATOR_DIFFERENT_PREPARE_COMMIT_LOG.value]:
-            print("Simulated crash scenario. Aborting transaction and informing client.")
-            return {'status': 'aborted'}
-
-        if int(data['simulation_num']) == SimulationScenario.COORDINATOR_RECOVERS_AFTER_PREPARE.value:
-            print("Coordinator recovers and sends commit requests.")
 
         # Phase 3: Commit
         for node_name in NODES:
@@ -331,6 +426,20 @@ class TwoPhaseCommitNode(Node):
         self.transaction_status = 'committed'
         print("Transaction committed successfully.")
         return {'status': 'committed'}
+    
+    def handle_2pc_log_prepare(self, data):
+        """Handles logging the prepare phase."""
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+        self.save_prepare_log()
+        return {'status': 'logged_prepare'}
+
+    def handle_2pc_log_commit(self, data):
+        """Handles logging the commit phase."""
+        log_entry = self.prepare_log_entry(data)
+        self.commit_log.append(log_entry)
+        self.save_commit_log()
+        return {'status': 'logged_commit'}
 
     # ------------------- Connection Handler -------------------
 
@@ -349,8 +458,11 @@ class TwoPhaseCommitNode(Node):
 
                 # Manange different RPC types with thread safety
                 with self.lock:
-                    if rpc_type == 'RequestVote':
-                        # Handle voting requests during leader election
+                    # Handle RAFT-specific RPCs
+                    if rpc_type == 'RaftReplicate':
+                        response = self.handle_raft_replication(request['data'])
+                    # Include all previous RPC handlers
+                    elif rpc_type == 'RequestVote':
                         response = self.handle_request_vote(request['data'])
                     elif rpc_type == 'AppendEntries':
                         # Handle log replication and heartbeat messages
@@ -385,12 +497,17 @@ class TwoPhaseCommitNode(Node):
                     elif rpc_type == 'GetBalance':
                         # Handle client balance requests
                         response = self.get_account_balance()
+                    elif rpc_type == 'GetLeaderStatus':
+                        response = {'is_leader': self.state == 'Leader'}
                     elif rpc_type == 'CheckTransactionStatus':
                         # Handle transaction status check requests
                         response = self.check_transaction_status()
                     elif rpc_type == 'SetBalance':
                         # Handle setting the account balance
                         response = self.set_account_balance(request['data']['balance'])
+                    elif rpc_type == 'GetLogs':
+                        # Handle log retrieval requests
+                        response = self.get_logs_for_coordinator()
                     else:
                         response = {'error': 'Unknown RPC type'}
 
@@ -401,7 +518,56 @@ class TwoPhaseCommitNode(Node):
             print(f"[{self.name}] Error handling client connection: {e}")
         finally:
             client_socket.close()  # Ensure socket is closed even if an error occurs
-            
-                    
 
+    def handle_raft_replication(self, data):
+        """Handles replication requests from RAFT leader."""
+        try:
+            data_type = data['type']
+            if data_type == 'account_balance':
+                self.account_balance = data['data']
+                self.save_account_balance()
+                print(f"[{self.name}] Updated balance to {self.account_balance}")
+            elif data_type == 'prepare_log':
+                self.prepare_log.append(data['data'])
+                self._append_to_json_file(self.prepare_log_file, data['data'])
+            elif data_type == 'commit_log':
+                self.commit_log.append(data['data'])
+                self._append_to_json_file(self.commit_log_file, data['data'])
+            return {'status': 'success'}
+        except Exception as e:
+            print(f"[{self.name}] Error in replication: {e}")
+            return {'status': 'error', 'message': str(e)}
+    
+    def replicate_to_cluster(self, data_type, data):
 
+        if not self.cluster_nodes or self.state != 'Leader':
+            print(f"[{self.name}] Not replicating: not leader or no cluster nodes")
+            return
+        
+        print(f"[{self.name}] Replicating {data_type} to cluster members")
+        
+        for node_name, node_info in self.cluster_nodes.items():
+            if node_name != self.name:
+                try:
+                    #--------------- RPC with timeout ---------------
+                    start_time = time.time()
+                    response = None
+                    while time.time() - start_time < self.timeout_duration:
+                        response = self.send_rpc(node_info['ip'], node_info['port'], 'RaftReplicate', {'type': data_type, 'data': data})
+                        if response:
+                            break
+                        time.sleep(0.1)  # Avoid busy-waiting
+                    #------------------------------------------------                    
+                    if not response:
+                        print(f"No response from leader {node_name} during {data_type} phase")
+                        break
+                
+                    if response and response.get('status') == 'success':
+                        print(f"[{self.name}] Successfully replicated to {node_name}")
+                except Exception as e:
+                    print(f"[{self.name}] Error replicating to {node_name}: {e}")
+
+    def apply_entry_to_state_machine(self, entry):
+        super().apply_entry_to_state_machine(entry)
+        if self.role == 'Participant':
+            self.commit_transaction(entry.get('delta', 0))
