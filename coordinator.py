@@ -204,10 +204,10 @@ class CoordinatorNode:
                 
                 if not response:
                     print(f"No response from leader {leader} during commit phase")
-                    break
+                    return {'status': 'aborted', 'message': 'Cluster did not commit!'}
             
                 if response.get('status') != 'committed':
-                    return False
+                    return {'status': 'aborted', 'message': 'Cluster did not commit!'}
 
         if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
             print(f"[{self.name}] Simulating coordinator crash after sending commit requests")

@@ -222,7 +222,7 @@ class TwoPhaseCommitNode(Node):
         if simulation_num == SimulationScenario.CRASH_BEFORE_COMMIT.value:
             self.simulate_crash_sleep()
             print("Simulated crash scenario 2. Aborting transaction.")
-            return {'status': 'abort'}
+            return {'status': 'aborted'}
         
         if self.state != 'Leader':
             print(f"[{self.name}] Not the cluster leader, rejecting 2PC commit")
