@@ -1,116 +1,140 @@
 from client import BaseClient
-from config import NODES
+from config import COORDINATOR_NODE, CLUSTER_A_NODES, CLUSTER_B_NODES
 import json
 import sys
 
 class Client2PC(BaseClient):
-    """
-    Extended client class for Two-Phase Commit (2PC) functionality.
-    """
-
-    def perform_transaction(self, transactions, bonus = False, simulation_num = 0):
+    def perform_transaction(self, transactions, bonus=False, simulation_num=0):
         """
         Send a transaction request to the coordinator.
-        The transaction format is a dictionary where keys are node names
-        and values are the transaction deltas for their accounts.
-        Example: {"node2": -100, "node3": 100}
+        Now uses account-level transactions instead of node-specific ones.
+        Example: {"AccountA": -100, "AccountB": 100}
         """
+        if bonus:
+            print("Performing bonus transaction...")
+            balance_a, balance_b, bonus_value = self.calculate_bonus()
+            
+            if bonus_value is not None:
+                # Add bonus to both accounts
+                transactions = {
+                    'AccountA': bonus_value,
+                    'AccountB': bonus_value
+                }
+                print(f"Applying bonus of {bonus_value} to both accounts")
         
-        # SPLIT THE TRANSACTION INTO TWO PHASES
-        # CREATE AND CALL A FUNCTION TO DO THE PREPARE. IF IT RETURNS TRUE, THEN CALL THE COMMIT
-        # THIS SHOULD ALLOW US TO CHECK THE STATUS OF THE TRANSACTION
-        # IF THE PREPARE RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
-        # IF THE COMMIT RETURNS FALSE, THEN WE SHOULD ABORT THE TRANSACTION
-        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION IN BETWEEN THE PREPARATION AND COMMIT
-        # WE SHOULD BE ABLE TO CHECK THE STATUS OF THE TRANSACTION AFTER THE COMMIT
+        coordinator_info = COORDINATOR_NODE['node1']
+        print(f"Sending transaction to coordinator: {transactions}")
         
-        if bonus == True:
-            print("Performing transaction with bonus...")
-            balance_a, balance_b, bones_value = self.calculate_bonus()
-            print(f"Balance A: {balance_a}, Balance B: {balance_b}, Bonus Value: {bones_value}")
-        
-        coordinator = 'node1'  # Assuming node1 is the coordinator
-        coordinator_info = NODES[coordinator]
-
-        if bonus == True and bones_value != None:
-            transactions = {'node2': bones_value, 'node3': bones_value}
-            print(f"Sending bonus transaaction to coordinator: {transactions}")
-            response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], '2pc_request', {'transactions': transactions, 'simulation_num': simulation_num})
-        else:
-            print(f"Sending transaction to coordinator: {transactions}")
-            response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], '2pc_request', {'transactions': transactions, 'simulation_num': simulation_num})
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            '2pc_request',
+            {'transactions': transactions, 'simulation_num': simulation_num}
+        )
 
         if response and response.get('status') == 'committed':
             print("Transaction successfully committed.")
+            return True
         elif response and response.get('status') == 'aborted':
             print("Transaction aborted.")
+            return False
         else:
             print("Failed to process the transaction.")
-            
-    def calculate_bonus(self):
-        bonus_value = None
-        balance_a = None
-        balance_b = None
-        
-        for node_name in NODES:
-            node_info = NODES[node_name]
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
-            if response and response.get('status') == 'success':
-                print(f"Successfully calculated bonus for {node_name}")
-            else:
-                print(f"Failed to calculate bonus for {node_name}")
-            if response and node_name == 'node2':
-                balance_a = response.get('balance')
-                if balance_a > 0:
-                    bonus_value = balance_a * 0.2
-                else:
-                    print('Balance is not greater than 0')
-            elif response and node_name == 'node3':
-                balance_b = response.get('balance')
-        
-        return balance_a, balance_b, bonus_value  
-
-    def check_transaction_status(self):
-        """
-        Request the transaction status from the coordinator.
-        Useful for debugging or ensuring that the transaction was successful.
-        """
-        coordinator = 'node1'  # Assuming node1 is the coordinator
-        coordinator_info = NODES[coordinator]
-
-        print("Checking transaction status...")
-        response = self.send_rpc(coordinator_info['ip'], coordinator_info['port'], 'CheckTransactionStatus', {})
-        if response:
-            print(f"Transaction Status: {response.get('status', 'Unknown')}")
-        else:
-            print("Failed to retrieve transaction status from the coordinator.")
+            return False
 
     def get_account_balances(self):
-        """
-        Retrieve the current account balances from all participant nodes.
-        """
-        print("Fetching account balances from all participants...")
-        for node_name in NODES:
-            if node_name == 'node1':  # Skip the coordinator
-                continue
-            node_info = NODES[node_name]
-            response = self.send_rpc(node_info['ip'], node_info['port'], 'GetBalance', {})
-            if response:
-                balance = response.get('balance', 'Could not be retrieved.')
-                print(f"Account balance at {node_name}: {balance}")
-            else:
-                print(f"Failed to fetch balance from {node_name}")
-    
-    def set_account_balance(self, node, balance):
-        """
-        Set the account balance for a participant node.
-        """
-        node_info = NODES[node]
-        response = self.send_rpc(node_info['ip'], node_info['port'], 'SetBalance', {'balance': balance})
+        """Retrieve current account balances from RAFT cluster leaders."""
+        print("Fetching account balances...")
+        
+        # Get balance from Cluster A leader
+        balance_a = self._get_cluster_balance('A')
+        print(f"Account A balance: {balance_a}")
+        
+        # Get balance from Cluster B leader
+        balance_b = self._get_cluster_balance('B')
+        print(f"Account B balance: {balance_b}")
+
+    def _get_cluster_balance(self, cluster_letter):
+        """Helper to get balance from a cluster's leader."""
+        cluster_nodes = CLUSTER_A_NODES if cluster_letter == 'A' else CLUSTER_B_NODES
+        
+        # First identify the leader
+        for node_name, node_info in cluster_nodes.items():
+            leader_response = self.send_rpc(
+                node_info['ip'], 
+                node_info['port'],
+                'GetLeaderStatus',
+                {}
+            )
+            
+            if leader_response and leader_response.get('is_leader'):
+                # Found the leader, get balance
+                balance_response = self.send_rpc(
+                    node_info['ip'],
+                    node_info['port'],
+                    'GetBalance',
+                    {}
+                )
+                if balance_response and balance_response.get('status') == 'success':
+                    return balance_response.get('balance')
+                break
+        
+        return 0  # Return 0 if no leader found or couldn't get balance
+
+    def set_account_balance(self, account, balance):
+        cluster_letter = account[-1] if account.startswith('Account') else account
+
+        data = {
+            'account': f'Account{cluster_letter}',
+            'balance': balance,
+            'simulation_num': 0
+        }
+        coordinator_info = COORDINATOR_NODE['node1']
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            'SetBalance',
+            data
+        )
         if response and response.get('status') == 'success':
-            print(f"Successfully set balance for {node} to {balance}")
+            print(f"Successfully set balance for Account {cluster_letter} to {balance}")
         else:
-            print(f"Failed to set balance for {node}")
+            print(f"Failed to set balance for Account {cluster_letter}")
+
+    def calculate_bonus(self):
+        """Calculate 20% bonus based on current account balances"""
+        print("Calculating bonus...")
+        
+        # Get current balances
+        balance_a = self._get_cluster_balance('A')
+        balance_b = self._get_cluster_balance('B')
+        
+        if balance_a is None or balance_b is None:
+            print("Could not retrieve current balances")
+            return None, None, None
+            
+        # Calculate 20% bonus
+        bonus_value = int(balance_a * 0.2)  # -> int to avoiding floating point issues
+        
+        print(f"Current balances - A: {balance_a}, B: {balance_b}")
+        print(f"Bonus amount (20% of A): {bonus_value}")
+        
+        return balance_a, balance_b, bonus_value
+    
+    def print_all_logs(self):
+        """Retrieve logs from all nodes in the system."""
+        print("Getting logs from all nodes...")
+        coordinator_info = COORDINATOR_NODE['node1']
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            'PrintAllLogs',
+            {}
+        )
+        if response and response.get('status') == 'success':
+            print(f"Successfully printed all logs")
+        else:
+            print(f"Failed to get logs")
 
 if __name__ == '__main__':
     client = Client2PC()
@@ -120,10 +144,11 @@ if __name__ == '__main__':
         print("  python client_2pc.py leader_change")
         print("  python client_2pc.py simulate_crash [node_name]")
         print("  python client_2pc.py print_logs")
-        print("  python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (optional)] [node crash simulation # (Default = 0)]")
+        print("  python client_2pc.py transaction trans_val1 trans_val2 [bonus flag (Default = False)] [node crash simulation # (Default = 0)]")
         print("  python client_2pc.py check_status")
         print("  python client_2pc.py get_balances")
         print("  python client_2pc.py set_balance [node_name] [balance]")
+        print(" python client_2pc.py print_all_logs")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -144,7 +169,7 @@ if __name__ == '__main__':
         node_name = sys.argv[2]
         client.simulate_crash(node_name)
     elif command == 'print_logs':
-        client.print_all_logs()
+        client.print_raft_logs()
 
     # New commands for 2PC functionality
     elif command == 'transaction':
@@ -154,7 +179,7 @@ if __name__ == '__main__':
         try:
             node2_val = int(sys.argv[2])
             node3_val = int(sys.argv[3])
-            transactions = {'node2': node2_val, 'node3': node3_val}
+            transactions = {'AccountA': node2_val, 'AccountB': node3_val}
             bonus_flag = True if len(sys.argv) > 4 and sys.argv[4] == 'bonus' else False
             crash_simulation_num = sys.argv[5] if len(sys.argv) == 6 else 0
             client.perform_transaction(transactions, bonus_flag, simulation_num=crash_simulation_num)
@@ -172,5 +197,7 @@ if __name__ == '__main__':
         node_name = sys.argv[2]
         balance = int(sys.argv[3])
         client.set_account_balance(node_name, balance)
+    elif command == 'print_all_logs':
+        client.print_all_logs()
     else:
         print("Unknown command.")
