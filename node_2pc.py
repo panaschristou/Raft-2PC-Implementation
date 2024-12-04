@@ -138,6 +138,7 @@ class TwoPhaseCommitNode(Node):
         self.save_account_balance()
 
     def prepare_log_entry(self, data):
+        """Creates a log entry for a transaction."""
         entry = {
             'transaction_id': self.transaction_id,
             'simulation_num': data.get('simulation_num', 0),  # Use 'get' to prevent KeyError
@@ -256,6 +257,7 @@ class TwoPhaseCommitNode(Node):
     # ------------------- 2PC Request -------------------
 
     def handle_2pc_request(self, data):
+        """Handles the 2PC request from the coordinator."""
         if self.role != 'Coordinator':
             return {'status': 'error', 'message': 'Only the coordinator can handle 2PC requests.'}
 
@@ -536,6 +538,7 @@ class TwoPhaseCommitNode(Node):
             return {'status': 'error', 'message': str(e)}
     
     def replicate_to_cluster(self, data_type, data):
+
         if not self.cluster_nodes or self.state != 'Leader':
             print(f"[{self.name}] Not replicating: not leader or no cluster nodes")
             return
@@ -553,15 +556,7 @@ class TwoPhaseCommitNode(Node):
                         if response:
                             break
                         time.sleep(0.1)  # Avoid busy-waiting
-                    #------------------------------------------------
-                    
-                    # response = self.send_rpc(
-                    #     node_info['ip'],
-                    #     node_info['port'],
-                    #     'RaftReplicate',
-                    #     {'type': data_type, 'data': data}
-                    # )
-                    
+                    #------------------------------------------------                    
                     if not response:
                         print(f"No response from leader {node_name} during {data_type} phase")
                         break
