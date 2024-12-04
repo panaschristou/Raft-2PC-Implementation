@@ -40,12 +40,6 @@ A distributed transaction system implementing both Raft consensus algorithm and 
 
 ## Usage
 
-### Update config file according to your setup
-
-```
-
-```
-
 ### Starting Nodes
 
 ```sh
