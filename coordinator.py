@@ -51,7 +51,7 @@ class CoordinatorNode:
                 if rpc_type == 'GetLeaderStatus':
                     response = {'is_leader': self.state == 'Leader'}
                 elif rpc_type == '2pc_request':
-                    response = {'status': 'committed' if self.start_2pc(request['data']) else 'aborted'}
+                    response = self.start_2pc(request['data'])
                 elif rpc_type == 'SetBalance':
                     response = self.handle_set_account_balance(request['data'])
                 elif rpc_type == 'PrintAllLogs':
@@ -155,12 +155,12 @@ class CoordinatorNode:
             if not response:
                 print(f"No response from leader {leader} during prepare phase")
                 prepared = False
-                return {'status': 'abort', 'message': 'Cluster did not prepare!'}
+                return {'status': 'aborted', 'message': 'Cluster did not prepare!'}
                 
             if response.get('status') != 'prepared':
                 print(f"Leader {leader} not prepared")
                 prepared = False
-                return {'status': 'abort', 'message': 'Cluster did not prepare!'}
+                return {'status': 'aborted', 'message': 'Cluster did not prepare!'}
                 
             prepare_responses[leader] = response
         
@@ -174,7 +174,7 @@ class CoordinatorNode:
                 if not response or response.get('status') != 'prepared':
                     print(f"Leader {leader} not prepared")
                     prepared = False
-                    break
+                    return {'status': 'aborted', 'message': 'Cluster did not prepare!'}
                 else:
                     prepared = True
                     print('Resend successful.')

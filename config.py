@@ -1,7 +1,7 @@
 from enum import Enum
 
 COORDINATOR_NODE = {
-    'node1': {'ip': '10.128.0.3', 'port': 5001},
+    'node1': {'ip': 'localhost', 'port': 5001},
 }
 
 # Cluster A (Account A) - Raft cluster
