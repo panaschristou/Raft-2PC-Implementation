@@ -6,16 +6,16 @@ COORDINATOR_NODE = {
 
 # Cluster A (Account A) - Raft cluster
 CLUSTER_A_NODES = {
-    'nodeA1': {'ip': 'localhost', 'port': 5002},  # Primary participant for 2PC
-    'nodeA2': {'ip': 'localhost', 'port': 5004},  # Raft replica
-    'nodeA3': {'ip': 'localhost', 'port': 5005},  # Raft replica
+    'nodeA1': {'ip': 'localhost', 'port': 5002},  # Raft node1
+    'nodeA2': {'ip': 'localhost', 'port': 5004},  # Raft node2
+    'nodeA3': {'ip': 'localhost', 'port': 5005},  # Raft node3
 }
 
 # Cluster B (Account B) - Raft cluster
 CLUSTER_B_NODES = {
-    'nodeB1': {'ip': 'localhost', 'port': 5003},  # Primary participant for 2PC
-    'nodeB2': {'ip': 'localhost', 'port': 5006},  # Raft replica
-    'nodeB3': {'ip': 'localhost', 'port': 5007},  # Raft replica
+    'nodeB1': {'ip': 'localhost', 'port': 5003},  # Raft node1
+    'nodeB2': {'ip': 'localhost', 'port': 5006},  # Raft node2
+    'nodeB3': {'ip': 'localhost', 'port': 5007},  # Raft node3
 }
 
 # Combined node configuration
