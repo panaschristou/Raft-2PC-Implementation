@@ -71,3 +71,31 @@ python client_2pc.py set_balance <account_name [AccountA/AccountB]> <balance>
 # Print logs
 python client_2pc.py print_logs
 ```
+## System Architecture
+
+- Coordinator Node: Manages 2PC protocol
+- Cluster A: Handles Account A transactions
+- Cluster B: Handles Account B transactions
+- Each cluster implements Raft consensus internally
+
+## Crash Simulation
+The system supports various crash scenarios:
+
+1. Crash before prepare
+2. Crash before commit
+3. Coordinator crash after sending prepare
+4. Coordinator crash after sending commit
+
+## Created Files (persistent files)
+
+- `node*_lab2Raft.txt` - Persistent Raft logs
+- `node*_account.txt` - Account balance storage
+- `node*_prepare_log.json` - 2PC prepare phase logs
+- `node*_commit_log.json` - 2PC commit phase logs
+
+## Error Handling 🧨
+Our implementation can handle the following errors:
+- Network failures
+- Node crashes
+- Transaction failures
+- Leader election timeouts
