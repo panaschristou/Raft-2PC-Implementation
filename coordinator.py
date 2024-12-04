@@ -226,7 +226,7 @@ class CoordinatorNode:
                         print('Last commit transaction ID:', last_commit_transaction_id)
                         if last_prepare_transaction_id != last_commit_transaction_id:
                             print(f"Last prepare and commit transaction IDs do not match for {node_name}")
-                            return {'status': 'abort', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
+                            return {'status': 'aborted', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
             print('All logs match. Transaction committed while coordinator was down.')
             return {'status': 'committed'}
         
