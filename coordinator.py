@@ -5,6 +5,7 @@ import json
 import sys
 import threading
 import time
+from config import SimulationScenario
 
 class CoordinatorNode:
     def __init__(self, name):
@@ -52,6 +53,8 @@ class CoordinatorNode:
                     response = {'status': 'committed' if self.start_2pc(request['data']) else 'aborted'}
                 elif rpc_type == 'SetBalance':
                     response = self.handle_set_account_balance(request['data'])
+                elif rpc_type == 'PrintAllLogs':
+                    response = self.print_all_logs()           
                 else:
                     response = {'error': 'Unknown RPC type'}
 
@@ -159,6 +162,17 @@ class CoordinatorNode:
                 break
                 
             prepare_responses[leader] = response
+        
+        if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_PREPARE.value:
+            print(f"[{self.name}] Simulating coordinator crash after sending prepare requests")
+            print(f'Resending prepare requests to leaders: {leader_transactions.keys()}')
+            for leader, tx in leader_transactions.items():
+                node_info = self.get_node_info(leader)
+                response = self.send_rpc(node_info['ip'], node_info['port'], '2pc_prepare', tx)
+                if not response or response.get('status') != 'prepared':
+                    print(f"Leader {leader} not prepared")
+                    prepared = False
+                    break
 
         # Phase 2: Commit
         if prepared:
@@ -215,6 +229,29 @@ class CoordinatorNode:
         elif node_name.startswith('nodeB'):
             return CLUSTER_B_NODES[node_name]
         return None
+    
+    def get_all_logs(self):
+        """Retrieve logs from all nodes in the system"""
+        all_logs = {}
+        for node_name, node_info in {**CLUSTER_A_NODES, **CLUSTER_B_NODES}.items():
+            response = self.send_rpc(
+                node_info['ip'],
+                node_info['port'],
+                'GetLog',
+                {}
+            )
+            if response:
+                all_logs[node_name] = response.get('log', [])
+        return all_logs
+    
+    def print_all_logs(self):
+        """Print logs from all nodes in the system"""
+        all_logs = self.get_all_logs()
+        for node_name, logs in all_logs.items():
+            print(f"\nLogs from node {node_name}:")
+            for entry in logs:
+                print(entry)
+        return {'status': 'success'}
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:

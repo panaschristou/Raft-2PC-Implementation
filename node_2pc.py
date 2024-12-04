@@ -176,6 +176,12 @@ class TwoPhaseCommitNode(Node):
         
         self.simulating_crash_ongoing = False
         print(f"[{self.name}] Node rejoining cluster with log: {self.prepare_log}")
+        
+    def get_logs_for_coordinator(self):
+        """Get logs for the coordinator for recovery."""
+        response = {'node_name': self.name, 'prepare_log': self.prepare_log, 'commit_log': self.commit_log, 'raft_log': self.log}
+        return response
+        
 
     # ------------------- 2PC Handlers -------------------
 
@@ -343,13 +349,6 @@ class TwoPhaseCommitNode(Node):
         self.save_prepare_log()
         print("Prepare phase successfully logged for all participants.")
 
-        # Simulation-specific handling
-        if int(data['simulation_num']) in [SimulationScenario.COORDINATOR_CRASH_BEFORE_COMMIT.value, SimulationScenario.COORDINATOR_DIFFERENT_PREPARE_COMMIT_LOG.value]:
-            print("Simulated crash scenario. Aborting transaction and informing client.")
-            return {'status': 'aborted'}
-
-        if int(data['simulation_num']) == SimulationScenario.COORDINATOR_RECOVERS_AFTER_PREPARE.value:
-            print("Coordinator recovers and sends commit requests.")
 
         # Phase 3: Commit
         for node_name in NODES:
@@ -503,6 +502,9 @@ class TwoPhaseCommitNode(Node):
                     elif rpc_type == 'SetBalance':
                         # Handle setting the account balance
                         response = self.set_account_balance(request['data']['balance'])
+                    elif rpc_type == 'GetLogs':
+                        # Handle log retrieval requests
+                        response = self.get_logs_for_coordinator()
                     else:
                         response = {'error': 'Unknown RPC type'}
 

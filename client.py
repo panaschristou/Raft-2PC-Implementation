@@ -52,7 +52,7 @@ class BaseClient:
         print("Failed to submit value to the cluster - no leader available")
         return False
 
-    def print_all_logs(self):
+    def print_raft_logs(self):
         """Print logs from all nodes in the cluster."""
         print("\nRequesting logs from all nodes...")
         for node_name in NODES:

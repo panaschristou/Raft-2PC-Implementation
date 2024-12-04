@@ -147,6 +147,21 @@ class Client2PC(BaseClient):
         print(f"Bonus amount (20% of A): {bonus_value}")
         
         return balance_a, balance_b, bonus_value
+    
+    def print_all_logs(self):
+        """Retrieve logs from all nodes in the system."""
+        print("Getting logs from all nodes...")
+        coordinator_info = COORDINATOR_NODE['node1']
+        response = self.send_rpc(
+            coordinator_info['ip'],
+            coordinator_info['port'],
+            'PrintAllLogs',
+            {}
+        )
+        if response and response.get('status') == 'success':
+            print(f"Successfully printed all logs")
+        else:
+            print(f"Failed to get logs")
 
 if __name__ == '__main__':
     client = Client2PC()
@@ -180,7 +195,7 @@ if __name__ == '__main__':
         node_name = sys.argv[2]
         client.simulate_crash(node_name)
     elif command == 'print_logs':
-        client.print_all_logs()
+        client.print_raft_logs()
 
     # New commands for 2PC functionality
     elif command == 'transaction':
@@ -208,5 +223,7 @@ if __name__ == '__main__':
         node_name = sys.argv[2]
         balance = int(sys.argv[3])
         client.set_account_balance(node_name, balance)
+    elif command == 'print_all_logs':
+        client.print_all_logs()
     else:
         print("Unknown command.")
