@@ -174,6 +174,9 @@ class CoordinatorNode:
                     print(f"Leader {leader} not prepared")
                     prepared = False
                     break
+                else:
+                    prepared = True
+                    print('Resend successful.')
 
         # Phase 2: Commit
         if prepared:
@@ -210,6 +213,7 @@ class CoordinatorNode:
                                 if last_prepare_transaction_id != last_commit_transaction_id:
                                     print(f"Last prepare and commit transaction IDs do not match for {node_name}")
                                     return {'status': 'abort', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
+                    print('All logs match. Transaction committed while coordinator was down.')
                     return {'status': 'committed'}
                             
                 
