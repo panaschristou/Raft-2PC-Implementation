@@ -198,9 +198,10 @@ class TwoPhaseCommitNode(Node):
         print(f'[{self.name}] Processing prepare for cluster {self.cluster_name} with delta: {cluster_delta}')
 
         if self.prepare_transaction(cluster_delta):
+            # Increment transaction ID only during prepare phase and only once.
+            self.transaction_id += 1
             log_entry = self.prepare_log_entry({'transactions': data['transactions'], 'simulation_num': simulation_num})
             self.prepare_log.append(log_entry)
-            self.transaction_id += 1
             # Replicate to RAFT followers
             self.replicate_to_cluster('prepare_log', log_entry)
             # Save the the prepare consensus in the persisten prepare log file
