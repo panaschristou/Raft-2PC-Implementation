@@ -175,7 +175,7 @@ class TwoPhaseCommitNode(Node):
         self.server_socket.listen(5)
         
         self.simulating_crash_ongoing = False
-        print(f"[{self.name}] Node rejoining cluster with log: {self.prepare_log}")
+        print(f"[{self.name}] Node rejoining cluster with logs: {self.prepare_log}, {self.commit_log}")
         
     def get_logs_for_coordinator(self):
         """Get logs for the coordinator for recovery."""

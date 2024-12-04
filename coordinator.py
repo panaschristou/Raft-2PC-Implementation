@@ -165,6 +165,7 @@ class CoordinatorNode:
         
         if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_PREPARE.value:
             print(f"[{self.name}] Simulating coordinator crash after sending prepare requests")
+            self.simulate_crash_sleep()
             print(f'Resending prepare requests to leaders: {leader_transactions.keys()}')
             for leader, tx in leader_transactions.items():
                 node_info = self.get_node_info(leader)
@@ -198,6 +199,7 @@ class CoordinatorNode:
                 
                 if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
                     print(f"[{self.name}] Simulating coordinator crash after sending commit requests")
+                    self.simulate_crash_sleep()
                     print('Getting all logs to compare commit and prepare last entries.')
                     all_logs = self.get_all_logs()
                     for node_name, logs in all_logs.items():
@@ -267,6 +269,30 @@ class CoordinatorNode:
             for entry in logs:
                 print(entry)
         return {'status': 'success'}
+    
+    def simulate_crash_sleep(self):
+        """
+        Simulates a crash by:
+        1. Temporarily disconnects from network to allow new leader election
+        """
+        self.simulating_crash_ongoing = True
+        
+        # Close current socket
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None
+        
+        print(f"[{self.name}] Going to sleep for 10 seconds to allow new leader election...")
+        time.sleep(10)
+        
+        # Create and bind new socket
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.ip, self.port))
+        self.server_socket.listen(5)
+        
+        self.simulating_crash_ongoing = False
+        print("Coordinator rejoining cluster")
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
