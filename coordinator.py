@@ -218,8 +218,8 @@ class CoordinatorNode:
                 for leader, tx in leader_transactions.items():
                     if node_name == leader:
                         print('Checking logs for', node_name)
-                        prepare_log = logs.get('prepare_log', [])
-                        commit_log = logs.get('commit_log', [])
+                        prepare_log = logs.get('prepare_log', [])[-1]
+                        commit_log = logs.get('commit_log', [])[-1]
                         last_prepare_transaction_id = prepare_log.get('transaction_id')
                         last_commit_transaction_id = commit_log.get('transaction_id')
                         print('Last prepare transaction ID:', last_prepare_transaction_id)
