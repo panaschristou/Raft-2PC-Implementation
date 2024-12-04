@@ -1,21 +1,21 @@
 from enum import Enum
 
 COORDINATOR_NODE = {
-    'node1': {'ip': '10.128.0.3', 'port': 5001},
+    'node1': {'ip': 'localhost', 'port': 5001},
 }
 
 # Cluster A (Account A) - Raft cluster
 CLUSTER_A_NODES = {
-    'nodeA1': {'ip': '10.128.0.4', 'port': 5002},  # Raft node1
-    'nodeA2': {'ip': '10.128.0.5', 'port': 5004},  # Raft node2
-    'nodeA3': {'ip': '10.128.0.6', 'port': 5005},  # Raft node3
+    'nodeA1': {'ip': 'localhost', 'port': 5002},  # Raft node1
+    'nodeA2': {'ip': 'localhost', 'port': 5004},  # Raft node2
+    'nodeA3': {'ip': 'localhost', 'port': 5005},  # Raft node3
 }
 
 # Cluster B (Account B) - Raft cluster
 CLUSTER_B_NODES = {
-    'nodeB1': {'ip': '10.128.0.7', 'port': 5003},  # Raft node1
-    'nodeB2': {'ip': '10.128.0.8', 'port': 5006},  # Raft node2
-    'nodeB3': {'ip': '10.128.0.9', 'port': 5007},  # Raft node3
+    'nodeB1': {'ip': 'localhost', 'port': 5003},  # Raft node1
+    'nodeB2': {'ip': 'localhost', 'port': 5006},  # Raft node2
+    'nodeB3': {'ip': 'localhost', 'port': 5007},  # Raft node3
 }
 
 # Combined node configuration
