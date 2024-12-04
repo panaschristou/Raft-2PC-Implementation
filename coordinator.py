@@ -155,12 +155,12 @@ class CoordinatorNode:
             if not response:
                 print(f"No response from leader {leader} during prepare phase")
                 prepared = False
-                break
+                return {'status': 'abort', 'message': 'Cluster did not prepare!'}
                 
             if response.get('status') != 'prepared':
                 print(f"Leader {leader} not prepared")
                 prepared = False
-                break
+                return {'status': 'abort', 'message': 'Cluster did not prepare!'}
                 
             prepare_responses[leader] = response
         
