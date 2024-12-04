@@ -210,20 +210,25 @@ class CoordinatorNode:
                     return False
 
         if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
-                    print(f"[{self.name}] Simulating coordinator crash after sending commit requests")
-                    self.simulate_crash_sleep()
-                    print('Getting all logs to compare commit and prepare last entries.')
-                    all_logs = self.get_all_logs()
-                    for node_name, logs in all_logs.items():
-                        for leader, tx in leader_transactions.items():
-                            if node_name == leader:
-                                last_prepare_transaction_id = logs[0].get('transaction_id')
-                                last_commit_transaction_id = logs[1].get('transaction_id')
-                                if last_prepare_transaction_id != last_commit_transaction_id:
-                                    print(f"Last prepare and commit transaction IDs do not match for {node_name}")
-                                    return {'status': 'abort', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
-                    print('All logs match. Transaction committed while coordinator was down.')
-                    return {'status': 'committed'}
+            print(f"[{self.name}] Simulating coordinator crash after sending commit requests")
+            self.simulate_crash_sleep()
+            print('Getting all logs to compare commit and prepare last entries.')
+            all_logs = self.get_all_logs()
+            for node_name, logs in all_logs.items():
+                for leader, tx in leader_transactions.items():
+                    if node_name == leader:
+                        print('Checking logs for', node_name)
+                        prepare_log = logs.get('prepare_log', [])
+                        commit_log = logs.get('commit_log', [])
+                        last_prepare_transaction_id = prepare_log.get('transaction_id')
+                        last_commit_transaction_id = commit_log.get('transaction_id')
+                        print('Last prepare transaction ID:', last_prepare_transaction_id)
+                        print('Last commit transaction ID:', last_commit_transaction_id)
+                        if last_prepare_transaction_id != last_commit_transaction_id:
+                            print(f"Last prepare and commit transaction IDs do not match for {node_name}")
+                            return {'status': 'abort', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
+            print('All logs match. Transaction committed while coordinator was down.')
+            return {'status': 'committed'}
         
         
         return {'status': 'committed'}
