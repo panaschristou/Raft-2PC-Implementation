@@ -200,8 +200,16 @@ class CoordinatorNode:
                 #     '2pc_commit',
                 #     tx
                 # )
+                        
                 
-                if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
+                if not response:
+                    print(f"No response from leader {leader} during commit phase")
+                    break
+            
+                if response.get('status') != 'committed':
+                    return False
+
+        if simulation_num == SimulationScenario.COORDINATOR_CRASH_AFTER_SENDING_COMMIT.value:
                     print(f"[{self.name}] Simulating coordinator crash after sending commit requests")
                     self.simulate_crash_sleep()
                     print('Getting all logs to compare commit and prepare last entries.')
@@ -216,15 +224,8 @@ class CoordinatorNode:
                                     return {'status': 'abort', 'message': 'Cluster did not agree to commit while coordinator crashed.'}
                     print('All logs match. Transaction committed while coordinator was down.')
                     return {'status': 'committed'}
-                            
-                
-                if not response:
-                    print(f"No response from leader {leader} during commit phase")
-                    break
-            
-                if response.get('status') != 'committed':
-                    return False
-
+        
+        
         return {'status': 'committed'}
 
     def find_cluster_leader(self, cluster_letter):
