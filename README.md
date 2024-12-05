@@ -71,6 +71,62 @@ python client_2pc.py set_balance <account_name [AccountA/AccountB]> <balance>
 # Print logs
 python client_2pc.py print_logs
 ```
+
+### Scenarios - Instructions
+1. You need to open 8 terminals in total. 
+2. Update the config file accordingly.
+3. For each terminal execute the corresponding file.
+4. All the simulation we introduce next can be performed using the client:
+
+**Sim 1: Ideal scenario**
+``sh
+python3 client_2pc.py set_balance AccountA 200
+
+python3 client_2pc.py set_balance AccountB 300
+
+python3 client_2pc.py transaction -100 100 
+
+python3 client_2pc.py transaction 0 0 bonus
+``
+
+**Sim 2: Not enough balance**
+``sh
+python3 client_2pc.py set_balance AccountA 90
+
+python3 client_2pc.py set_balance AccountB 50
+
+python3 client_2pc.py transaction -100 100
+
+python3 client_2pc.py transaction 0 0 bonus
+
+``
+
+**Crash simulations:**
+
+*Node-2 crashed before responding to the coordinator.*
+
+``sh
+  python3 client_2pc.py transaction -100 100 0 1
+``
+
+*Node-2 crashed after responding to the coordinator.*
+
+``sh
+  python3 client_2pc.py transaction -100 100 0 2
+``
+
+*Node-1 crashed after sending out the request and potential solutions to recovery from the crash (Coordinator crashes after sending the prepare messages)*
+
+``sh
+  python3 client_2pc.py transaction -100 100 0 3
+``
+
+*Node-1 crashed after sending out the request and potential solutions to recovery from the crash (Coordinator crashes after sending the commit messages)*
+
+``sh
+  python3 client_2pc.py transaction -100 100 0 4
+``
+
 ## System Architecture
 
 - Coordinator Node: Manages 2PC protocol
