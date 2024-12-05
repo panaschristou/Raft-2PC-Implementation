@@ -79,7 +79,8 @@ python client_2pc.py print_logs
 4. All the simulation we introduce next can be performed using the client:
 
 **Sim 1: Ideal scenario**
-``sh
+
+```
 python3 client_2pc.py set_balance AccountA 200
 
 python3 client_2pc.py set_balance AccountB 300
@@ -87,10 +88,11 @@ python3 client_2pc.py set_balance AccountB 300
 python3 client_2pc.py transaction -100 100 
 
 python3 client_2pc.py transaction 0 0 bonus
-``
+```
 
 **Sim 2: Not enough balance**
-``sh
+
+```sh
 python3 client_2pc.py set_balance AccountA 90
 
 python3 client_2pc.py set_balance AccountB 50
@@ -99,33 +101,36 @@ python3 client_2pc.py transaction -100 100
 
 python3 client_2pc.py transaction 0 0 bonus
 
-``
+```
 
 **Crash simulations:**
 
 *Node-2 crashed before responding to the coordinator.*
 
-``sh
+```sh
   python3 client_2pc.py transaction -100 100 0 1
-``
+```
 
 *Node-2 crashed after responding to the coordinator.*
 
-``sh
+```sh
   python3 client_2pc.py transaction -100 100 0 2
-``
+```
 
 *Node-1 crashed after sending out the request and potential solutions to recovery from the crash (Coordinator crashes after sending the prepare messages)*
 
-``sh
+```sh
   python3 client_2pc.py transaction -100 100 0 3
-``
+```
 
 *Node-1 crashed after sending out the request and potential solutions to recovery from the crash (Coordinator crashes after sending the commit messages)*
 
-``sh
+```sh
   python3 client_2pc.py transaction -100 100 0 4
-``
+```
+
+## Integrating RAFT for replication
+✅ Given that our system is totally based on RAFT from the ground up, we see that each node has replicas of its leader nodes. 
 
 ## System Architecture
 
